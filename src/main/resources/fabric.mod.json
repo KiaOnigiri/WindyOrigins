@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "mirroredorigin",
+  "version": "${version}",
+  "name": "Mirrored Origin",
+  "description": "Splits one world into two phases that share every block but no entities. Adds the Mirrored origin: a being that lives behind the reflection and can bear reality only seconds at a time. Requires Origins.",
+  "authors": [
+    "WindyKindy49"
+  ],
+  "contact": {
+    "homepage": "https://github.com/KiaOnigiri/MirroredOrigin",
+    "sources": "https://github.com/KiaOnigiri/MirroredOrigin",
+    "issues": "https://github.com/KiaOnigiri/MirroredOrigin/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/mirroredorigin/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.windykindy49.mirroredorigin.MirroredOrigin"
+    ]
+  },
+  "mixins": [
+    "mirroredorigin.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*",
+    "origins": ">=1.10.0",
+    "apoli": ">=2.9.0",
+    "calio": ">=1.11.0"
+  }
+}

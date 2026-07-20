@@ -1,0 +1,18 @@
+{
+  "origin.mirroredorigin.mirrored.name": "The Mirrored",
+  "origin.mirroredorigin.mirrored.description": "You exist on the far side of the reflection, in a world repeated down to the last stone and empty of everything that walks. Reality rejects you, and you can bear it only moments at a time. Nothing in the mirror will ever come looking for you.",
+  "power.mirroredorigin.glass_body.name": "Dead Reflection",
+  "power.mirroredorigin.glass_body.description": "You have only 7 hearts, and you are undead — a reflection was never alive to begin with.",
+  "power.mirroredorigin.water_phobia.name": "Hydrophobia",
+  "power.mirroredorigin.water_phobia.description": "Water severs your tie to the Normal World. Any contact throws you straight back into the Mirror World, and while you are in it your active powers will not work.",
+  "power.mirroredorigin.reality_toxicity.name": "Reality Toxicity",
+  "power.mirroredorigin.reality_toxicity.description": "The Normal World poisons you. After 10 seconds there you are struck by Slowness and Weakness, after 20 seconds you begin taking damage, and after 25 seconds you die.",
+  "power.mirroredorigin.phase_shift.name": "Phase Shift",
+  "power.mirroredorigin.phase_shift.description": "[Primary Active] Switches your phase. Returning to the Mirror World is free; leaving for the Normal World costs 6 hunger and all saturation. Cooldown: 6 seconds.",
+  "power.mirroredorigin.banishment_punch.name": "Banishment Punch",
+  "power.mirroredorigin.banishment_punch.description": "[Secondary Active] Charges your fist for 3 seconds. Striking a creature with your bare hand during that time banishes it to the opposite phase. Cooldown: 10 minutes on a hit, 5 minutes on a miss.",
+  "power.mirroredorigin.spawn_in_mirror.name": "Mirror Spawn",
+  "power.mirroredorigin.spawn_in_mirror.description": "You are born and reborn in the Mirror World.",
+  "power.mirroredorigin.glass_skin.name": "Glass Skin",
+  "power.mirroredorigin.glass_skin.description": "Your skin takes on a translucent, glassy hue."
+}

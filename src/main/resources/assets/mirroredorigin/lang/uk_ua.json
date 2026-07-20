@@ -1,0 +1,18 @@
+{
+  "origin.mirroredorigin.mirrored.name": "Дзеркальний",
+  "origin.mirroredorigin.mirrored.description": "Ви існуєте по той бік відображення — у світі, повтореному до останнього каменя й порожньому від усього живого. Реальність відторгає вас, і витримувати її ви можете лише митями. Зате в дзеркалі вас ніхто й ніколи не шукатиме.",
+  "power.mirroredorigin.glass_body.name": "Мертве відображення",
+  "power.mirroredorigin.glass_body.description": "У вас лише 7 сердець, і ви — нежить: відображення ніколи й не було живим.",
+  "power.mirroredorigin.water_phobia.name": "Відторгнення води",
+  "power.mirroredorigin.water_phobia.description": "Вода розриває ваш зв'язок зі Звичайним світом. Будь-який дотик миттєво викидає вас назад у Дзеркальний світ, а поки ви в ній, активні здібності не працюватимуть.",
+  "power.mirroredorigin.reality_toxicity.name": "Токсичність реальності",
+  "power.mirroredorigin.reality_toxicity.description": "Звичайний світ для вас отруйний. Через 10 секунд там вас накриває Сповільнення та Слабкість, через 20 починається шкода, через 25 настає смерть.",
+  "power.mirroredorigin.phase_shift.name": "Фазовий зсув",
+  "power.mirroredorigin.phase_shift.description": "[Основна здібність] Перемикає фазу. Повернення в Дзеркальний світ безкоштовне, вихід у Звичайний світ коштує 6 одиниць голоду та все насичення. Перезарядка: 6 секунд.",
+  "power.mirroredorigin.banishment_punch.name": "Вигнання",
+  "power.mirroredorigin.banishment_punch.description": "[Вторинна здібність] Заряджає кулак на 3 секунди. Удар голою рукою по істоті в цей час відправляє її у протилежну фазу. Перезарядка: 10 хвилин при влучанні, 5 хвилин при промаху.",
+  "power.mirroredorigin.spawn_in_mirror.name": "Дзеркальне народження",
+  "power.mirroredorigin.spawn_in_mirror.description": "Ви з'являєтеся та відроджуєтеся в Дзеркальному світі.",
+  "power.mirroredorigin.glass_skin.name": "Скляна шкіра",
+  "power.mirroredorigin.glass_skin.description": "Ваша шкіра набуває напівпрозорого скляного відтінку."
+}

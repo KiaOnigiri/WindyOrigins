@@ -1,0 +1,18 @@
+{
+  "origin.mirroredorigin.mirrored.name": "Odbity",
+  "origin.mirroredorigin.mirrored.description": "Istniejesz po drugiej stronie odbicia, w świecie powtórzonym co do ostatniego kamienia i pustym od wszystkiego, co chodzi. Rzeczywistość cię odrzuca i znosisz ją tylko przez chwile. Za to w lustrze nikt nigdy nie przyjdzie cię szukać.",
+  "power.mirroredorigin.glass_body.name": "Martwe odbicie",
+  "power.mirroredorigin.glass_body.description": "Masz tylko 7 serc i jesteś nieumarłym — odbicie nigdy nie było żywe.",
+  "power.mirroredorigin.water_phobia.name": "Hydrofobia",
+  "power.mirroredorigin.water_phobia.description": "Woda zrywa twoją więź ze Zwykłym Światem. Każdy kontakt natychmiast wyrzuca cię z powrotem do Lustrzanego Świata, a dopóki w niej jesteś, twoje zdolności aktywne nie zadziałają.",
+  "power.mirroredorigin.reality_toxicity.name": "Toksyczność rzeczywistości",
+  "power.mirroredorigin.reality_toxicity.description": "Zwykły Świat cię truje. Po 10 sekundach dopadają cię Spowolnienie i Słabość, po 20 zaczynasz tracić zdrowie, a po 25 umierasz.",
+  "power.mirroredorigin.phase_shift.name": "Przesunięcie fazowe",
+  "power.mirroredorigin.phase_shift.description": "[Zdolność główna] Zmienia twoją fazę. Powrót do Lustrzanego Świata jest darmowy, wyjście do Zwykłego Świata kosztuje 6 punktów głodu i całe nasycenie. Odnowienie: 6 sekund.",
+  "power.mirroredorigin.banishment_punch.name": "Cios wygnania",
+  "power.mirroredorigin.banishment_punch.description": "[Zdolność dodatkowa] Ładuje twoją pięść na 3 sekundy. Uderzenie gołą ręką w tym czasie wygania istotę do przeciwnej fazy. Odnowienie: 10 minut przy trafieniu, 5 minut przy chybieniu.",
+  "power.mirroredorigin.spawn_in_mirror.name": "Lustrzane narodziny",
+  "power.mirroredorigin.spawn_in_mirror.description": "Rodzisz się i odradzasz w Lustrzanym Świecie.",
+  "power.mirroredorigin.glass_skin.name": "Szklana skóra",
+  "power.mirroredorigin.glass_skin.description": "Twoja skóra nabiera przezroczystego, szklanego odcienia."
+}

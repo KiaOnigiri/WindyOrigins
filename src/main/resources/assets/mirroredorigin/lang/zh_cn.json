@@ -1,0 +1,18 @@
+{
+  "origin.mirroredorigin.mirrored.name": "镜中人",
+  "origin.mirroredorigin.mirrored.description": "你存在于倒影的另一侧——那里的世界连每一块石头都被复刻，却空无生灵。现实排斥着你，你只能在其中停留片刻。而在镜中，永远不会有谁来寻你。",
+  "power.mirroredorigin.glass_body.name": "死寂之影",
+  "power.mirroredorigin.glass_body.description": "你只有 7 颗心，而且你是亡灵——倒影从来就不曾活过。",
+  "power.mirroredorigin.water_phobia.name": "恐水",
+  "power.mirroredorigin.water_phobia.description": "水会切断你与常世的联系。任何接触都会立刻把你抛回镜界，且只要身处水中，你的主动技能都无法使用。",
+  "power.mirroredorigin.reality_toxicity.name": "现实毒性",
+  "power.mirroredorigin.reality_toxicity.description": "常世对你而言是剧毒。停留 10 秒后你会陷入缓慢与虚弱，20 秒后开始受到伤害，25 秒后死亡。",
+  "power.mirroredorigin.phase_shift.name": "相位转移",
+  "power.mirroredorigin.phase_shift.description": "【主动技能】切换你的相位。返回镜界无需代价；前往常世消耗 6 点饥饿值与全部饱和度。冷却：6 秒。",
+  "power.mirroredorigin.banishment_punch.name": "放逐之拳",
+  "power.mirroredorigin.banishment_punch.description": "【副动技能】蓄力 3 秒。在此期间以空手击中生物，可将其放逐至相反的相位。冷却：命中 10 分钟，落空 5 分钟。",
+  "power.mirroredorigin.spawn_in_mirror.name": "镜界降生",
+  "power.mirroredorigin.spawn_in_mirror.description": "你在镜界诞生，也在镜界重生。",
+  "power.mirroredorigin.glass_skin.name": "琉璃之肤",
+  "power.mirroredorigin.glass_skin.description": "你的皮肤呈现半透明的琉璃色泽。"
+}

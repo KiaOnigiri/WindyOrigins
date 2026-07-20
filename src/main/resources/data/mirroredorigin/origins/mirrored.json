@@ -1,0 +1,16 @@
+{
+  "powers": [
+    "mirroredorigin:glass_body",
+    "mirroredorigin:water_phobia",
+    "mirroredorigin:reality_toxicity",
+    "mirroredorigin:phase_shift",
+    "mirroredorigin:banishment_punch",
+    "mirroredorigin:glass_skin",
+    "mirroredorigin:spawn_in_mirror"
+  ],
+  "icon": {
+    "item": "minecraft:glass"
+  },
+  "order": 1,
+  "impact": 3
+}

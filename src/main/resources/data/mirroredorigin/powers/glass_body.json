@@ -1,0 +1,15 @@
+{
+  "type": "origins:multiple",
+  "fragile": {
+    "type": "origins:attribute",
+    "modifier": {
+      "attribute": "minecraft:generic.max_health",
+      "value": -6,
+      "operation": "addition"
+    }
+  },
+  "undead_metabolism": {
+    "type": "origins:entity_group",
+    "group": "undead"
+  }
+}

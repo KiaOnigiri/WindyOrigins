@@ -1,0 +1,18 @@
+{
+  "origin.mirroredorigin.mirrored.name": "鏡写しの者",
+  "origin.mirroredorigin.mirrored.description": "あなたは反射の向こう側に存在する。石の一つに至るまで写し取られながら、生けるものだけが欠け落ちた世界に。現実はあなたを拒み、耐えられるのはほんの数瞬にすぎない。その代わり、鏡の中まで誰かが探しに来ることは決してない。",
+  "power.mirroredorigin.glass_body.name": "死せる映し身",
+  "power.mirroredorigin.glass_body.description": "ハートは 7 つしかなく、あなたはアンデッドである——映し身は初めから生きてなどいない。",
+  "power.mirroredorigin.water_phobia.name": "水恐怖症",
+  "power.mirroredorigin.water_phobia.description": "水は通常世界との繋がりを断ち切る。触れた瞬間に鏡界へ引き戻され、水中にいるあいだはアクティブ能力が使えない。",
+  "power.mirroredorigin.reality_toxicity.name": "現実の毒",
+  "power.mirroredorigin.reality_toxicity.description": "通常世界はあなたにとって毒である。10 秒で移動速度低下と弱体化に襲われ、20 秒でダメージが始まり、25 秒で死に至る。",
+  "power.mirroredorigin.phase_shift.name": "位相転移",
+  "power.mirroredorigin.phase_shift.description": "【主要アクティブ】位相を切り替える。鏡界へ戻るのは無償だが、通常世界へ出るには満腹度 6 と隠し満腹度のすべてを消費する。クールダウン：6 秒。",
+  "power.mirroredorigin.banishment_punch.name": "追放の拳",
+  "power.mirroredorigin.banishment_punch.description": "【副次アクティブ】3 秒間、拳に力を溜める。その間に素手で生物を殴ると、反対の位相へ追放する。クールダウン：命中で 10 分、空振りで 5 分。",
+  "power.mirroredorigin.spawn_in_mirror.name": "鏡界誕生",
+  "power.mirroredorigin.spawn_in_mirror.description": "あなたは鏡界で生まれ、鏡界で蘇る。",
+  "power.mirroredorigin.glass_skin.name": "ガラスの肌",
+  "power.mirroredorigin.glass_skin.description": "あなたの肌は半透明の硝子めいた色を帯びる。"
+}
