@@ -135,8 +135,8 @@ blocks are shared.
 
 ## Installation
 
-Drop `MirroredOrigin-1.0.0.jar` into your `mods` folder alongside Fabric API, Origins, Apoli
-and Calio. On a server, do the same there and make sure every player runs the same jar.
+Drop `MirroredOrigin-1.0.0.jar` into your `mods` folder alongside Fabric API and Origins.
+On a server, do the same there and make sure every player runs the same jar.
 
 Grant the origin manually:
 
