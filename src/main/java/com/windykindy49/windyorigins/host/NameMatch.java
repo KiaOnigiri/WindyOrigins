@@ -179,8 +179,9 @@ public final class NameMatch {
                     full = true;
                 } else {
                     // Part of the name was said ("木板" for any planks), with a verb stuck to it or not.
+                    // One character said alone is a word of its own ("剑" for any sword).
                     int shared = shared(packed, run);
-                    if (shared < 2) {
+                    if (shared < Math.min(2, packed.length())) {
                         continue;
                     }
 

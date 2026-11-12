@@ -1015,4 +1015,22 @@ public final class HostClient {
     static void unused() {
         RenderSystem.enableBlend();
     }
+
+    private static final net.minecraft.util.Identifier CHIP_SLOT = new net.minecraft.util.Identifier("windyorigins", "gui/chip_slot");
+
+    /** The picture of an empty slot: for a Host's own head slot, the chip that sits there; otherwise what it was. */
+    public static com.mojang.datafixers.util.Pair<net.minecraft.util.Identifier, net.minecraft.util.Identifier> slotIcon(
+        net.minecraft.screen.slot.Slot slot, com.mojang.datafixers.util.Pair<net.minecraft.util.Identifier, net.minecraft.util.Identifier> shown
+    ) {
+        if (shown == null || !net.minecraft.screen.PlayerScreenHandler.EMPTY_HELMET_SLOT_TEXTURE.equals(shown.getSecond())) {
+            return shown;
+        }
+
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null || slot.inventory != client.player.getInventory() || !com.windykindy49.windyorigins.common.Powers.has(client.player, "chip_slot")) {
+            return shown;
+        }
+
+        return com.mojang.datafixers.util.Pair.of(shown.getFirst(), CHIP_SLOT);
+    }
 }
