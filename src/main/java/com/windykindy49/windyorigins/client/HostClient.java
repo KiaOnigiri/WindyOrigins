@@ -84,6 +84,7 @@ public final class HostClient {
     }
 
     public static void init() {
+        VoltaNames.init();
         ClientPlayNetworking.registerGlobalReceiver(HostNetworking.SAY, (var0, var1, var2, var3) -> {
             Text var4 = var2.readText();
             int var5 = var2.readVarInt();

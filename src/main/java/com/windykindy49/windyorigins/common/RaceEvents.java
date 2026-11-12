@@ -71,6 +71,24 @@ public final class RaceEvents {
                         ? TypedActionResult.fail(var0.getStackInHand(var2))
                         : TypedActionResult.pass(var0.getStackInHand(var2))
             );
+        ServerPlayNetworking.registerGlobalReceiver(HostNetworking.NAMES, (server, player, handler, buf, sender) -> {
+            int id = buf.readVarInt();
+            java.util.List<net.minecraft.util.Identifier> exact = new java.util.ArrayList<>();
+            java.util.List<net.minecraft.util.Identifier> partial = new java.util.ArrayList<>();
+
+            for (int list = 0; list < 2; list++) {
+                int count = Math.min(buf.readVarInt(), 64);
+
+                for (int i = 0; i < count; i++) {
+                    net.minecraft.util.Identifier one = net.minecraft.util.Identifier.tryParse(buf.readString(256));
+                    if (one != null) {
+                        (list == 0 ? exact : partial).add(one);
+                    }
+                }
+            }
+
+            server.execute(() -> HostManager.answer(player, id, exact, partial));
+        });
         ServerPlayNetworking.registerGlobalReceiver(HostNetworking.COMMAND, (var0, var1, var2, var3, var4) -> {
             int var5 = var3.readVarInt();
             var0.execute(() -> {

@@ -42,12 +42,35 @@ public final class DreamClient {
         HudRenderCallback.EVENT.register((matrices, delta) -> DreamClient.render(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
     }
 
+    private static int nextBeat;
+
+    /**
+     * Under Nightmare the victim hears their own pulse: not a sound in the world but one in the ears, so it has
+     * no place and nobody else hears it. The lower the health, the faster it goes.
+     */
+    private static void pulse(MinecraftClient client) {
+        if (!client.player.hasStatusEffect(WindyEffects.NIGHTMARE)) {
+            nextBeat = 0;
+            return;
+        }
+
+        if (--nextBeat > 0) {
+            return;
+        }
+
+        float health = MathHelper.clamp(client.player.getHealth() / Math.max(1.0F, client.player.getMaxHealth()), 0.0F, 1.0F);
+        nextBeat = 11 + Math.round(8.0F * health);
+        float volume = 0.55F + 0.45F * (1.0F - health);
+        client.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.master(com.windykindy49.windyorigins.common.WindySounds.DREAM_PULSE, 0.85F + 0.25F * (1.0F - health), volume));
+    }
+
     private static void tick(MinecraftClient var0) {
         if (fade > 0) {
             fade--;
         }
 
         if (var0.player != null && var0.world != null && !var0.isPaused()) {
+            pulse(var0);
             if (var0.player.age % 10 == 0 && Powers.has(var0.player, "dream_sense")) {
                 for (Entity var2 : var0.world.getOtherEntities(var0.player, var0.player.getBoundingBox().expand(24.0))) {
                     boolean var10000;

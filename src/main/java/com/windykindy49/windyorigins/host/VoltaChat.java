@@ -502,6 +502,11 @@ public final class VoltaChat {
             }
         }
 
+        Request players = playersSwitch(text, tokens, command, player);
+        if (players != null) {
+            return players;
+        }
+
         int flags = 0;
 
         for (Map.Entry<Integer, String[]> entry : FLAGS.entrySet()) {
@@ -588,6 +593,102 @@ public final class VoltaChat {
         }
 
         return new Request(command, String.join(" ", subject), number, player, flags, null);
+    }
+
+    // "Players" where the language has a plural of its own, and where it does not (then the word alone decides nothing).
+    private static final String[] PLAYERS_MANY = new String[]{
+        "игроков$", "игроки$", "игрокам$", "игроками$", "людей$", "гравців$", "гравці$", "гравцям$", "players$", "people$", "jugadores$", "joueurs$", "jogadores$",
+        "graczy$", "gracze$"
+    };
+    private static final String[] PLAYERS_ANY = new String[]{"spieler", "プレイヤー", "玩家"};
+    private static final String[] PVP_WORD = new String[]{"пвп$", "pvp$"};
+    private static final String[] SWITCH_NO = new String[]{
+        "не$", "ні$", "нельзя", "хватит", "перестань", "щади", "пощади", "береги", "выкл", "отключи", "вимкни", "dont", "don$", "not$", "never", "no$", "stop", "spare",
+        "leave", "off$", "nicht", "kein", "verschone", "lass", "aus$", "nunca", "deja", "apaga", "desactiva", "ne$", "pas$", "epargne", "laisse", "desactive", "nao$", "poupe",
+        "deixa", "desliga", "nie$", "oszczedz", "zostaw", "wylacz", "ない", "するな", "やめ", "オフ", "不", "别", "勿", "关"
+    };
+    private static final String[] SWITCH_YES = new String[]{
+        "вкл", "включи", "можно", "разреша", "снова", "увімкни", "on$", "allow", "may$", "again", "erlaub", "wieder", "activa", "permite", "puedes", "active$",
+        "autorise", "peux", "ativa", "pode$", "wlacz", "pozwol", "mozesz", "オン", "していい", "开", "可以"
+    };
+
+    private static boolean any(String text, String[] tokens, String[] words) {
+        for (String word : words) {
+            if (find(text, tokens, word) >= 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * "Не бей игроков", "players are off limits", "бей игроков", "pvp off": not a request to do something
+     * now but a standing order about other players. Number 0 is "leave them alone", 1 is "they are fair game",
+     * -1 is "the other way round".
+     */
+    private static Request playersSwitch(String text, String[] tokens, HostCommand command, UUID named) {
+        boolean word = any(text, tokens, PVP_WORD);
+        boolean many = any(text, tokens, PLAYERS_MANY);
+        if (!word && !many && !any(text, tokens, PLAYERS_ANY)) {
+            return null;
+        }
+
+        boolean no = any(text, tokens, SWITCH_NO);
+        boolean yes = any(text, tokens, SWITCH_YES);
+        if (no || yes || word) {
+            return new Request(HostCommand.PVP, "", no ? 0 : (yes ? 1 : -1), null, 0, null);
+        }
+
+        // "Бей игроков", in the plural and at nobody in particular, is permission; "ударь игрока" is a strike.
+        return many && named == null && command != null && command.targeted ? new Request(HostCommand.PVP, "", 1, null, 0, null) : null;
+    }
+
+    // Words that go with digging and say nothing about what to dig.
+    private static final String[] NOT_A_THING = new String[]{
+        "блок", "метр", "тоннел", "туннел", "тунел", "проход", "прохід", "шахт", "лестниц", "ступен", "сход", "вперед", "прямо", "глубин", "длин", "туда", "тут$",
+        "здесь", "там$", "это$", "этот", "эту$", "эти$", "все$", "всю$", "весь$", "немного", "чуть", "block", "meter", "metre", "tunnel", "shaft", "stair", "steps",
+        "forward", "ahead", "straight", "long$", "deep$", "here", "there", "this", "that", "these", "those", "all$", "it$", "some$", "bloc", "bloque", "bloco", "blok",
+        "metr", "tunel", "schacht", "treppe", "geradeaus", "vorwarts", "escalier", "puits", "avant$", "escalera", "pozo$", "adelante", "escada", "poco$", "frente",
+        "szyb", "schod", "prosto", "naprzod", "ブロック", "メートル", "トンネル", "階段", "隧道", "楼梯",
+        // "сруби это дерево", "выбери жилу": the tree or the vein under the crosshair, not a block by that name.
+        "дерев", "жил", "tree", "vein", "baum", "ader$", "arbol", "veta$", "arbre", "filon", "arvore", "veio$", "drzew", "zyle", "zyla"
+    };
+
+    /** What is left of the subject of a digging request once the directions and measures are out: the name of a block, or nothing. */
+    public static String thing(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return "";
+        }
+
+        StringBuilder out = new StringBuilder();
+
+        outer:
+        for (String token : normalize(subject).split(" ")) {
+            if (token.isEmpty()) {
+                continue;
+            }
+
+            String[] one = new String[]{token};
+
+            for (String word : NOT_A_THING) {
+                if (find(token, one, word) >= 0) {
+                    continue outer;
+                }
+            }
+
+            for (String[] words : FLAGS.values()) {
+                for (String word : words) {
+                    if (word.indexOf(' ') < 0 && find(token, one, word) >= 0) {
+                        continue outer;
+                    }
+                }
+            }
+
+            out.append(out.length() > 0 ? " " : "").append(token);
+        }
+
+        return out.toString();
     }
 
     private static boolean carriesVerb(String token) {
@@ -812,6 +913,8 @@ public final class VoltaChat {
         more(HostCommand.MAGNET, "подбирай", "собир", "всоси", "лутай", "залут", "притяни лут", "пылесось", "hoover", "grab loot");
         more(HostCommand.HARVEST, "срубай", "сруб", "нарубай", "спили", "добыч", "выдолби", "сними жилу", "вали дерево", "дерево руби", "заготовь", "lumberjack", "timber");
         more(HostCommand.DIG, "копа", "проход", "шахт", "пробей", "проруби", "прокладывай", "бури$", "пробури", "вниз копай", "drill", "bore$", "shaft");
+        more(HostCommand.HARVEST, "сломай", "ломай", "разбей", "разломай", "снеси$", "розбий", "break$", "smash", "zerstore", "zerbrich", "casse$", "detruis", "rompe$", "destruye", "quebra", "destrua", "rozbij", "zniszcz", "壊して", "破坏");
+        VERBS.put(HostCommand.PVP, new String[]{"пвп$", "pvp$"});
         more(HostCommand.BUILD, "построи", "мостик", "стенк", "перекрыт", "заделай", "замуруй", "проложи", "закрой проход", "забаррикадир", "construct", "barricade");
         more(HostCommand.TOGGLE, "откро", "закро", "ворот", "калитк", "кнопк", "щелкни", "активируй", "жми$", "отвори", "затвори", "дерни рычаг", "switch on", "unlock", "push the");
         more(HostCommand.LIGHT, "подсвети", "темнот", "ничего не вижу", "не видно", "фонар", "ламп", "освещ", "ночное зрение", "включи свет", "поставь факел", "cant see", "too dark", "lamp");
