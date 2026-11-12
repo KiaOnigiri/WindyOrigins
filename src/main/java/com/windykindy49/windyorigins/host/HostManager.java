@@ -88,6 +88,9 @@ public final class HostManager {
     /** Volta needs a breath between any two requests, whatever they are. */
     private static final int GLOBAL_COOLDOWN = 30;
     private static final int MAGNET_TICKS = 70;
+    /** How far away a dropped item may lie and still be picked up by name, and how long an arm takes to bring it. */
+    private static final double PICK_RANGE = 24.0;
+    private static final int HAUL_TICKS = 60;
     private static final int DECOY_TICKS = 160;
     /** From the request to the hit: her face strobes for a few ticks, then the shot is there. */
     private static final int BOLT_TICKS = 6;
@@ -467,10 +470,12 @@ public final class HostManager {
                 }
 
                 tickMagnet(var2, var3, var4);
+                tickHaul(var2, var3, var4);
                 tickDecoy(var2, var3, var4);
                 tickWarp(var2, var3, var4);
                 tickSiphon(var2, var3, var4);
                 tickTurret(var2, var3, var4);
+                tickShield(var2, var3, var4);
                 if (var2.age % 20 == 0) {
                     if (var3.trailWorld != var2.getWorld()) {
                         var3.trail.clear();
@@ -718,12 +723,7 @@ public final class HostManager {
                 cast(var0, 3);
                 return 0;
             case MAGNET:
-                state(var0).magnetEnds = var0.getWorld().getTime() + (long)MAGNET_TICKS;
-                HostNetworking.fx(var0, HostNetworking.FX_PULSE, 0, -1, var0.getPos(), HostNetworking.GOLD, 16);
-                PhaseFx.sound(var0, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.5F, 2.0F);
-                say(var0, "working", 0);
-                cast(var0, 3);
-                return 0;
+                return pick(var0, var2);
             case TOGGLE:
                 return toggle(var0) ? 0 : -1;
             case LIGHT:
@@ -1172,6 +1172,69 @@ public final class HostManager {
             best.damage(host.getWorld().getDamageSources().indirectMagic(host, host), 3.0F);
             PhaseFx.sound(host, at.x, at.y, at.z, SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT, SoundCategory.PLAYERS, 0.3F, 2.0F);
         }
+    }
+
+    /**
+     * While the barrier stands, whatever is shot or thrown at the Host is plucked out of the air and crushed:
+     * arrows, tridents, fireballs, potions. That does not use the barrier up; it still waits for its one blow.
+     */
+    private static void tickShield(ServerPlayerEntity host, HostManager.State st, long now) {
+        if (st.shieldEnds <= now) {
+            return;
+        }
+
+        Box body = host.getBoundingBox().expand(0.75);
+        boolean caught = false;
+
+        for (net.minecraft.entity.projectile.ProjectileEntity shot : host.getWorld()
+            .getEntitiesByClass(net.minecraft.entity.projectile.ProjectileEntity.class, host.getBoundingBox().expand(10.0), x -> x.isAlive() && comingAt(host, x, body))) {
+            Vec3d at = shot.getPos();
+            HostNetworking.fx(host, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POKE, -1, at, HostNetworking.BLUE, 6);
+            hostFx(host, ARC_CYAN, at.x, at.y, at.z, 5, 0.12, 0.12, 0.12, 0.0);
+            PhaseFx.sound(host, at.x, at.y, at.z, SoundEvents.ENTITY_ITEM_BREAK, SoundCategory.PLAYERS, 0.5F, 1.8F);
+            shot.discard();
+            caught = true;
+        }
+
+        if (caught) {
+            st.shieldCaught++;
+            if (now - st.catchNotice > 60L || st.catchNotice == 0L) {
+                // Once per volley, not once per arrow.
+                HostNetworking.word(host, HostNetworking.WORD_BLOCK, null, HostNetworking.BLUE);
+                say(host, "shield_catch", 3);
+            }
+
+            st.catchNotice = now;
+        }
+    }
+
+    /** Is this thing in the air and on its way into the Host within the next few ticks? */
+    private static boolean comingAt(ServerPlayerEntity host, net.minecraft.entity.projectile.ProjectileEntity shot, Box body) {
+        if (shot instanceof net.minecraft.entity.projectile.FishingBobberEntity || !PhaseFx.samePhase(shot, host)) {
+            return false;
+        }
+
+        Entity owner = shot.getOwner();
+        if (owner == host || owner != null && host.isTeammate(owner)) {
+            return false;
+        }
+
+        Vec3d speed = shot.getVelocity();
+        double fast = speed.length();
+        if (fast < 0.05) {
+            return false;
+        }
+
+        if (shot instanceof net.minecraft.entity.projectile.PersistentProjectileEntity) {
+            // An arrow stuck in a wall keeps the speed it arrived with; it is going nowhere.
+            net.minecraft.nbt.NbtCompound saved = shot.writeNbt(new net.minecraft.nbt.NbtCompound());
+            if (saved.getBoolean("inGround")) {
+                return false;
+            }
+        }
+
+        Vec3d from = shot.getPos();
+        return body.contains(from) || body.raycast(from, from.add(speed.multiply(Math.max(3.0, 2.5 / fast)))).isPresent();
     }
 
     /** The barrier swallows the next blow whole, then bursts in the attacker's face. */
@@ -1789,7 +1852,7 @@ public final class HostManager {
             BlockState var3 = var1.getBlockState(var2);
             float var4 = var3.getHardness(var1, var2);
             BlockEntity var5 = var1.getBlockEntity(var2);
-            if (!var3.isAir() && var3.getFluidState().isEmpty() && !(var4 < 0.0F) && !(var4 >= 50.0F) && var5 == null) {
+            if (!var3.isAir() && var3.getFluidState().isEmpty() && !(var4 < 0.0F) && !(var4 > 50.0F) && var5 == null) {
                 if (withTool(var0, var3, () -> var0.interactionManager.tryBreakBlock(var2))) {
                     hostFx(var0, ARC_CYAN, (double)var2.getX() + 0.5, (double)var2.getY() + 0.5, (double)var2.getZ() + 0.5, 3, 0.3, 0.3, 0.3, 0.0);
                 }
@@ -2340,6 +2403,168 @@ public final class HostManager {
         };
     }
 
+    // ------------------------------------------------------------------ picking up by name
+
+    /**
+     * "Подбери всё", "pick up the swords", "собери алмазы". With nothing named it is the magnet it always was,
+     * plus whatever lies in sight beyond the magnet's reach. With a name it is only that, of what lies where
+     * the Host can see it: every item of every mod, by the name the Host's own game shows for it.
+     */
+    private static int pick(ServerPlayerEntity host, VoltaChat.Request request) {
+        String thing = VoltaChat.loot(request.subject());
+        if (thing.isBlank()) {
+            state(host).magnetEnds = host.getWorld().getTime() + (long)MAGNET_TICKS;
+            HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, host.getPos(), HostNetworking.GOLD, 16);
+            PhaseFx.sound(host, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.5F, 2.0F);
+            say(host, "working", 0);
+            cast(host, 3);
+            haul(host, lying(host, stack -> true));
+            return 0;
+        }
+
+        String alias = VoltaChat.canonical(thing);
+        String raw = thing.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
+        askNames(host, false, thing, (exact, partial) -> {
+            List<java.util.function.Predicate<ItemStack>> wanted = new ArrayList<>();
+            if (!exact.isEmpty()) {
+                // The words are the whole name of something: that thing or nothing.
+                java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(exact);
+                wanted.add(stack -> ids.contains(Registries.ITEM.getId(stack.getItem())));
+            } else {
+                if (alias != null) {
+                    // The everyday word first ("железо" is ingots, lumps and nuggets, not every iron tool) ...
+                    wanted.add(stack -> matchesLoot(stack, alias));
+                    wanted.add(stack -> matchesItem(stack, alias, true));
+                }
+
+                if (!partial.isEmpty()) {
+                    // ... then everything the words are part of the name of: "меч" is every sword.
+                    java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(partial);
+                    wanted.add(stack -> ids.contains(Registries.ITEM.getId(stack.getItem())));
+                }
+
+                wanted.add(stack -> matchesItem(stack, raw, false));
+                wanted.add(stack -> matchesItem(stack, raw, true));
+            }
+
+            for (java.util.function.Predicate<ItemStack> one : wanted) {
+                List<ItemEntity> found = lying(host, one);
+                if (found.isEmpty()) {
+                    continue;
+                }
+
+                int count = 0;
+                boolean same = true;
+
+                for (ItemEntity item : found) {
+                    count += item.getStack().getCount();
+                    same &= item.getStack().isOf(found.get(0).getStack().getItem());
+                }
+
+                haul(host, found);
+                PhaseFx.sound(host, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.5F, 2.0F);
+                if (same) {
+                    say(host, "pick", 1, count, found.get(0).getStack().getItem().getName());
+                } else {
+                    say(host, "pick_many", 1, count);
+                }
+
+                cast(host, 3);
+                return;
+            }
+
+            say(host, "pick_none", 2, thing);
+        });
+        return 0;
+    }
+
+    private static boolean matchesLoot(ItemStack stack, String alias) {
+        String path = Registries.ITEM.getId(stack.getItem()).getPath();
+        return switch (alias) {
+            case "iron", "gold", "copper" -> path.equals(alias + "_ingot") || path.equals("raw_" + alias) || path.equals(alias + "_nugget");
+            default -> matchesItem(stack, alias, false);
+        };
+    }
+
+    /** Dropped items the Host can see: in front, not behind a wall, within {@link #PICK_RANGE}; and whatever lies at the Host's feet. Nearest first. */
+    private static List<ItemEntity> lying(ServerPlayerEntity host, java.util.function.Predicate<ItemStack> wanted) {
+        Vec3d eye = host.getEyePos();
+        Vec3d look = host.getRotationVec(1.0F);
+        List<ItemEntity> out = new ArrayList<>(host.getWorld().getEntitiesByClass(ItemEntity.class, host.getBoundingBox().expand(PICK_RANGE), item -> {
+            if (!item.isAlive() || item.getStack().isEmpty() || !PhaseFx.samePhase(item, host) || !wanted.test(item.getStack())) {
+                return false;
+            }
+
+            Vec3d to = item.getPos().add(0.0, 0.25, 0.0).subtract(eye);
+            double distance = to.length();
+            if (distance <= 2.5) {
+                return true;
+            }
+
+            return distance <= PICK_RANGE && to.dotProduct(look) / distance >= 0.35 && (clear(host, eye, item.getPos().add(0.0, 0.15, 0.0)) || clear(host, eye, item.getPos().add(0.0, 0.7, 0.0)));
+        }));
+        out.sort(java.util.Comparator.comparingDouble(item -> item.squaredDistanceTo(host)));
+        return out.size() > 64 ? new ArrayList<>(out.subList(0, 64)) : out;
+    }
+
+    private static boolean clear(ServerPlayerEntity host, Vec3d from, Vec3d to) {
+        return host.getWorld().raycast(new RaycastContext(from, to, ShapeType.COLLIDER, FluidHandling.NONE, host)).getType() == Type.MISS;
+    }
+
+    private static void haul(ServerPlayerEntity host, List<ItemEntity> items) {
+        HostManager.State st = state(host);
+        long until = host.getWorld().getTime() + (long)HAUL_TICKS;
+        int arms = 0;
+
+        for (ItemEntity item : items) {
+            st.hauled.put(item.getId(), until);
+            item.setPickupDelay(0);
+            if (arms < 3) {
+                HostNetworking.fx(host, HostNetworking.FX_TENDRIL, arms++, item.getId(), item.getPos().add(0.0, 0.2, 0.0), HostNetworking.GOLD, 10);
+            }
+        }
+    }
+
+    /** Each item in an arm comes to the Host in a straight line; one that has got caught on something is simply set down at the Host's feet. */
+    private static void tickHaul(ServerPlayerEntity host, HostManager.State st, long now) {
+        if (st.hauled.isEmpty() || host.age % 2 != 0) {
+            return;
+        }
+
+        Vec3d to = host.getPos().add(0.0, 0.6, 0.0);
+        int arms = 0;
+        java.util.Iterator<Map.Entry<Integer, Long>> each = st.hauled.entrySet().iterator();
+
+        while (each.hasNext()) {
+            Map.Entry<Integer, Long> entry = each.next();
+            if (!(host.getWorld().getEntityById(entry.getKey()) instanceof ItemEntity item) || !item.isAlive()) {
+                each.remove();
+                continue;
+            }
+
+            Vec3d way = to.subtract(item.getPos());
+            double distance = way.length();
+            if (now >= entry.getValue() || distance > PICK_RANGE + 16.0) {
+                item.setVelocity(Vec3d.ZERO);
+                item.setPosition(host.getX(), host.getY() + 0.3, host.getZ());
+                item.velocityModified = true;
+                item.setPickupDelay(0);
+                each.remove();
+                continue;
+            }
+
+            if (distance > 1.2) {
+                item.setVelocity(way.multiply(Math.min(1.1, 0.3 + distance * 0.07) / distance).add(0.0, 0.04, 0.0));
+                item.velocityModified = true;
+            }
+
+            item.setPickupDelay(0);
+            if (arms < 3 && host.age % 6 == 0) {
+                HostNetworking.fx(host, HostNetworking.FX_TENDRIL, arms++, item.getId(), item.getPos().add(0.0, 0.2, 0.0), HostNetworking.GOLD, 8);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ mining by name
 
     /**
@@ -2356,18 +2581,37 @@ public final class HostManager {
         askNames(host, true, thing, (exact, partial) -> {
             List<java.util.function.Predicate<BlockState>> wanted = new ArrayList<>();
             if (!exact.isEmpty()) {
+                // The words are the whole name of a block: that block, and what is the same thing to the one asking.
+                // "Gold ore" is gold ore in stone, in deepslate and in netherrack; "dirt" has grass on top.
                 java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(exact);
-                wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
-            }
+                java.util.Set<String> ores = oresOf(exact);
+                java.util.Set<Block> kin = kinOf(exact);
+                boolean baked = ids.contains(Registries.BLOCK.getId(Blocks.TERRACOTTA));
+                wanted.add(
+                    state -> ids.contains(Registries.BLOCK.getId(state.getBlock()))
+                            || kin.contains(state.getBlock())
+                            || baked && state.isIn(net.minecraft.registry.tag.BlockTags.TERRACOTTA)
+                            || ores.stream().anyMatch(stuff -> isOre(state, stuff))
+                );
+            } else {
+                if (alias != null) {
+                    // An everyday word for a material ("gold", "алмазы"): its ore in any rock and the blocks made of it.
+                    wanted.add(state -> isStuff(state, alias));
+                }
 
-            if (alias != null) {
-                // Strictly: "stone" must not take the stone bricks of somebody's wall with it.
-                wanted.add(state -> matchesOre(Registries.BLOCK.getId(state.getBlock()).getPath(), alias));
-            }
+                if (!partial.isEmpty()) {
+                    // The same for a material this mod has never heard of: if the words fit the ore of one thing only
+                    // ("олово" of some other mod), it is that thing's ore and its blocks, not its doors and stairs.
+                    java.util.Set<String> ores = oresOf(partial);
+                    if (ores.size() == 1) {
+                        String stuff = ores.iterator().next();
+                        wanted.add(state -> isOre(state, stuff) || isStorage(state, stuff));
+                    }
 
-            if (exact.isEmpty() && !partial.isEmpty()) {
-                java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(partial);
-                wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
+                    // Strictly last: "stone" must not take the stone bricks of somebody's wall while there is stone.
+                    java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(partial);
+                    wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
+                }
             }
 
             if (wanted.isEmpty()) {
@@ -2410,12 +2654,77 @@ public final class HostManager {
         return 0;
     }
 
-    private static boolean matchesOre(String path, String alias) {
+    /** What a word of the alias table means as a thing to dig out. */
+    private static boolean isStuff(BlockState state, String alias) {
+        String path = Registries.BLOCK.getId(state.getBlock()).getPath();
         return switch (alias) {
-            case "diamond", "iron", "gold", "coal", "copper", "emerald", "redstone", "lapis" -> path.endsWith(alias + "_ore");
+            case "diamond", "iron", "gold", "coal", "copper", "emerald", "redstone", "lapis" -> isOre(state, alias) || isStorage(state, alias);
+            case "ancient_debris" -> path.equals("ancient_debris") || path.equals("netherite_block");
             case "log" -> path.endsWith("_log") || path.endsWith("_stem");
             default -> path.equals(alias);
         };
+    }
+
+    private static boolean tagged(BlockState state, String namespace, String path) {
+        return state.isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.BLOCK, new net.minecraft.util.Identifier(namespace, path)));
+    }
+
+    /** The ore of this material in whatever rock it sits: "gold_ore", "deepslate_gold_ore", "nether_gold_ore", and any mod's by its tags. */
+    private static boolean isOre(BlockState state, String stuff) {
+        String path = Registries.BLOCK.getId(state.getBlock()).getPath();
+        return path.equals(stuff + "_ore")
+            || path.endsWith("_" + stuff + "_ore")
+            || tagged(state, "minecraft", stuff + "_ores")
+            || tagged(state, "c", stuff + "_ores")
+            || tagged(state, "forge", "ores/" + stuff);
+    }
+
+    /** The block the material is stored as, smelted or raw: "gold_block", "raw_gold_block". */
+    private static boolean isStorage(BlockState state, String stuff) {
+        String path = Registries.BLOCK.getId(state.getBlock()).getPath();
+        return path.equals(stuff + "_block")
+            || path.equals("raw_" + stuff + "_block")
+            || tagged(state, "c", stuff + "_blocks")
+            || tagged(state, "c", "raw_" + stuff + "_blocks")
+            || tagged(state, "forge", "storage_blocks/" + stuff)
+            || tagged(state, "forge", "storage_blocks/raw_" + stuff);
+    }
+
+    /** The materials whose ores are among these blocks: "deepslate_gold_ore" is "gold". */
+    private static java.util.Set<String> oresOf(List<net.minecraft.util.Identifier> ids) {
+        java.util.Set<String> out = new HashSet<>();
+
+        for (net.minecraft.util.Identifier id : ids) {
+            String path = id.getPath();
+            if (path.endsWith("_ore") && path.length() > 4) {
+                String stem = path.substring(0, path.length() - 4);
+                out.add(stem.substring(stem.lastIndexOf('_') + 1));
+            }
+        }
+
+        return out;
+    }
+
+    /** Blocks that go by the same word in speech though the game names them apart: asking for dirt means the grassy top of it too. */
+    private static java.util.Set<Block> kinOf(List<net.minecraft.util.Identifier> ids) {
+        java.util.Set<Block> out = new HashSet<>();
+
+        for (net.minecraft.util.Identifier id : ids) {
+            Block block = Registries.BLOCK.get(id);
+            if (block == Blocks.DIRT) {
+                out.addAll(List.of(Blocks.GRASS_BLOCK, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.PODZOL, Blocks.MYCELIUM));
+            } else if (block == Blocks.NETHERRACK) {
+                out.addAll(List.of(Blocks.CRIMSON_NYLIUM, Blocks.WARPED_NYLIUM));
+            } else if (block == Blocks.SAND) {
+                out.add(Blocks.RED_SAND);
+            } else if (block == Blocks.SNOW) {
+                out.add(Blocks.SNOW_BLOCK);
+            } else if (block == Blocks.SNOW_BLOCK) {
+                out.add(Blocks.SNOW);
+            }
+        }
+
+        return out;
     }
 
     private static boolean minable(ServerWorld world, BlockPos pos, BlockState state, BlockPos feet) {
@@ -2425,7 +2734,7 @@ public final class HostManager {
 
         float hardness = state.getHardness(world, pos);
         // Nothing unbreakable, and never the ground from under the Host's own feet or right beside them.
-        return hardness >= 0.0F && hardness < 50.0F && !(pos.getY() < feet.getY() && Math.abs(pos.getX() - feet.getX()) <= 1 && Math.abs(pos.getZ() - feet.getZ()) <= 1);
+        return hardness >= 0.0F && hardness <= 50.0F && !(pos.getY() < feet.getY() && Math.abs(pos.getX() - feet.getX()) <= 1 && Math.abs(pos.getZ() - feet.getZ()) <= 1);
     }
 
     /**
@@ -2834,9 +3143,13 @@ public final class HostManager {
         long turretEnds;
         Vec3d turret;
         long shieldEnds;
+        long catchNotice;
+        int shieldCaught;
         World trailWorld;
         final ArrayDeque<Float> healthTrail = new ArrayDeque<>();
         long magnetEnds;
+        /** Items an arm is bringing in, by entity id, and the tick by which each must have arrived. */
+        final Map<Integer, Long> hauled = new HashMap<>();
         long decoyEnds;
         Vec3d decoy;
         long listenUntil;

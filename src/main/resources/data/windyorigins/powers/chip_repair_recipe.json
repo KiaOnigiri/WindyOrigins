@@ -1,3 +1,37 @@
 {
-  "type": "apoli:simple"
+  "type": "apoli:simple",
+  "badges": [
+    {
+      "type": "origins:crafting_recipe",
+      "sprite": "origins:textures/gui/badge/recipe.png",
+      "recipe": {
+        "id": "windyorigins:chip_repair_kit",
+        "type": "minecraft:crafting_shaped",
+        "category": "equipment",
+        "pattern": [
+          " R ",
+          "CAC",
+          " G "
+        ],
+        "key": {
+          "R": {
+            "item": "minecraft:redstone"
+          },
+          "C": {
+            "item": "minecraft:copper_ingot"
+          },
+          "A": {
+            "item": "minecraft:amethyst_shard"
+          },
+          "G": {
+            "item": "minecraft:gold_ingot"
+          }
+        },
+        "result": {
+          "item": "windyorigins:chip_repair_kit",
+          "count": 1
+        }
+      }
+    }
+  ]
 }
