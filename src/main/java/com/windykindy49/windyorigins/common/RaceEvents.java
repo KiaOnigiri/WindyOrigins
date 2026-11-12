@@ -84,15 +84,6 @@ public final class RaceEvents {
             com.windykindy49.windyorigins.revenant.RevenantNetworking.RELEASE, (var0, var1, var2, var3, var4) -> var0.execute(() -> RevenantManager.release(var1))
         );
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((var0, var1, var2) -> !HostManager.onChat(var1, var0.getContent().getString()));
-        ServerPlayConnectionEvents.DISCONNECT.register((var0, var1) -> {
-            FrostManager.forget(var0.player);
-            LuminianManager.remove(var0.player);
-            FoldedManager.forget(var0.player);
-            HostManager.forget(var0.player);
-            RevenantManager.onLeave(var0.player);
-            com.windykindy49.windyorigins.revenant.WispManager.forget(var0.player);
-            DreamManager.onLeave(var0.player);
-        });
         // While the worlds are still up: wake the dreamers, release the possessed, take back what was only lent.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(var0 -> {
             DreamManager.stopping(var0);
@@ -113,5 +104,20 @@ public final class RaceEvents {
             LuminianManager.reset();
             com.windykindy49.windyorigins.bounty.BountyManager.reset();
         });
+    }
+
+    /**
+     * A player is on the way out. Called from the server thread, before the player is saved and taken out of the world,
+     * so whatever is put right here is what gets written to disk. (Fabric's own disconnect event is not used for this:
+     * from 1.20.2 on it can arrive from a network thread.)
+     */
+    public static void onLeave(net.minecraft.server.network.ServerPlayerEntity player) {
+        FrostManager.forget(player);
+        LuminianManager.remove(player);
+        FoldedManager.forget(player);
+        HostManager.forget(player);
+        RevenantManager.onLeave(player);
+        com.windykindy49.windyorigins.revenant.WispManager.forget(player);
+        DreamManager.onLeave(player);
     }
 }

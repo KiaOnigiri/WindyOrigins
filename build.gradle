@@ -51,7 +51,8 @@ dependencies {
 
 processResources {
     inputs.property 'version', project.version
-    filesMatching('fabric.mod.json') {
+    // mods.toml is what Forge and NeoForge read: there the mod runs through Sinytra Connector.
+    filesMatching(['fabric.mod.json', 'META-INF/mods.toml']) {
         expand 'version': project.version
     }
 }

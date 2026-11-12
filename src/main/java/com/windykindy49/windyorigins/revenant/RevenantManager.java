@@ -229,6 +229,11 @@ public final class RevenantManager {
 
     /** The server is stopping: nobody is left possessing anything, and nothing leaks into the next world. */
     public static void stopping(MinecraftServer var0) {
+        // A server that failed to start is stopped before it has a player list.
+        if (var0.getPlayerManager() == null) {
+            return;
+        }
+
         for (ServerPlayerEntity var2 : var0.getPlayerManager().getPlayerList()) {
             onLeave(var2);
             WispManager.dismiss(var2);

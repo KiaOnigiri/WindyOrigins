@@ -58,6 +58,7 @@
     "PersistentProjectileEntityMixin",
     "PetPhaseSitMixin",
     "PlayerEntitySoundMixin",
+    "PlayerLeaveMixin",
     "PlayerInteractPhaseMixin",
     "PowderSnowWalkMixin",
     "ProjectileEntityMixin",

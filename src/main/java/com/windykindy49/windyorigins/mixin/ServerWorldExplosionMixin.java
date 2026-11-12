@@ -1,13 +1,11 @@
 package com.windykindy49.windyorigins.mixin;
 
+import com.llamalad7.mixinextras.sugar.Local;
 import com.windykindy49.windyorigins.util.MirrorEntity;
 import com.windykindy49.windyorigins.util.PhaseScope;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.world.World.ExplosionSourceType;
 import net.minecraft.world.explosion.Explosion;
-import net.minecraft.world.explosion.ExplosionBehavior;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -19,18 +17,7 @@ public class ServerWorldExplosionMixin {
         method = {"createExplosion"},
         at = {@At("HEAD")}
     )
-    private void onExplodeHead(
-        Entity var1,
-        DamageSource var2,
-        ExplosionBehavior var3,
-        double var4,
-        double var6,
-        double var8,
-        float var10,
-        boolean var11,
-        ExplosionSourceType var12,
-        CallbackInfoReturnable<Explosion> var13
-    ) {
+    private void onExplodeHead(CallbackInfoReturnable<Explosion> var13, @Local(argsOnly = true) Entity var1) {
         PhaseScope.enterOrKeep(var1 != null ? ((MirrorEntity)var1).windyorigins$isInMirrorWorld() : null);
     }
 
