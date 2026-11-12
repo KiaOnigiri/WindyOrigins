@@ -161,6 +161,20 @@ public final class HostManager {
         return other instanceof PlayerEntity && other != host && sparesPlayers(host);
     }
 
+    /**
+     * Another player Volta goes for of her own accord, with players switched on: the turret, the chain of an
+     * overload, a spreading virus, lifted gravity, a turned mob. Never a spectator, somebody building in
+     * creative, or one of the Host's own team; those can still be aimed at by hand.
+     */
+    private static boolean fairGame(ServerPlayerEntity host, Entity other) {
+        return other instanceof PlayerEntity player && other != host && !sparesPlayers(host) && !player.isSpectator() && !player.isCreative() && !host.isTeammate(other);
+    }
+
+    /** What her area abilities take for an enemy: monsters, whatever is after the Host, and players when they are switched on. */
+    private static boolean enemy(ServerPlayerEntity host, LivingEntity other) {
+        return other instanceof Monster || other instanceof MobEntity mob && mob.getTarget() == host || fairGame(host, other);
+    }
+
     // ------------------------------------------------------------------ names
 
     private record Ask(int id, long deadline, java.util.function.BiConsumer<List<net.minecraft.util.Identifier>, List<net.minecraft.util.Identifier>> then) {
@@ -788,7 +802,7 @@ public final class HostManager {
             return var10;
         }
 
-        return nearest(var0, var2x -> var2x instanceof Monster && var2x.getBoundingBox().getCenter().subtract(var8).normalize().dotProduct(var9) > 0.2, true);
+        return nearest(var0, var2x -> (var2x instanceof Monster || fairGame(var0, var2x)) && var2x.getBoundingBox().getCenter().subtract(var8).normalize().dotProduct(var9) > 0.2, true);
     }
 
     private static LivingEntity nearest(ServerPlayerEntity var0, java.util.function.Predicate<LivingEntity> var1, boolean var2) {
@@ -866,7 +880,7 @@ public final class HostManager {
                                     && var2x != var0
                                     && var2x.isAlive()
                                     && PhaseFx.samePhase(var2x, var0)
-                                    && (var2x instanceof Monster || var2x instanceof MobEntity && ((MobEntity)var2x).getTarget() == var0)
+                                    && enemy(var0, var2x)
                         )) {
                         if (var5x++ >= 2) {
                             break;
@@ -997,7 +1011,7 @@ public final class HostManager {
                     var3x -> var3x != var7
                             && var3x != var6
                             && var3x.isAlive()
-                            && var3x instanceof Monster
+                            && (var3x instanceof Monster || fairGame(var6, var3x))
                             && !VIRUS.containsKey(var3x.getUuid())
                             && PhaseFx.samePhase(var3x, var6)
                 )) {
@@ -1140,7 +1154,7 @@ public final class HostManager {
                 x -> x != host
                         && x.isAlive()
                         && PhaseFx.samePhase(x, host)
-                        && (x instanceof Monster || x instanceof MobEntity m && m.getTarget() == host)
+                        && enemy(host, x)
                         && !TURNED.containsKey(x.getUuid())
             )) {
             double d = chest(e).squaredDistanceTo(at);
@@ -1196,7 +1210,7 @@ public final class HostManager {
                         && x.isAlive()
                         && PhaseFx.samePhase(x, host)
                         && MobGroups.of(x) != MobGroups.Group.BOSS
-                        && (x instanceof Monster || x instanceof MobEntity m && m.getTarget() == host)
+                        && enemy(host, x)
             );
         if (caught.isEmpty()) {
             say(host, "no_target", 2);
@@ -1541,7 +1555,7 @@ public final class HostManager {
                     if (var6 != null) {
                         if (var6 instanceof MobEntity var7 && var7.isAlive() && (Long)var5.getValue() >= var3.getTime()) {
                             hostFx(var7, ARC_PINK, var7.getX(), var7.getEyeY() + 0.5, var7.getZ(), 1, 0.1, 0.05, 0.1, 0.0);
-                            HostileEntity var17 = null;
+                            LivingEntity var17 = null;
                             double var9 = 256.0;
 
                             for (HostileEntity var12 : var3.getEntitiesByClass(
@@ -1553,6 +1567,19 @@ public final class HostManager {
                                 if (var13 < var9) {
                                     var9 = var13;
                                     var17 = var12;
+                                }
+                            }
+
+                            UUID owner = TURNED_OWNER.get(var7.getUuid());
+                            ServerPlayerEntity master = owner == null ? null : var0.getPlayerManager().getPlayer(owner);
+                            if (master != null) {
+                                // Players too, when the Host has them switched on.
+                                for (PlayerEntity near : var3.getPlayers()) {
+                                    double away = near.squaredDistanceTo(var7);
+                                    if (away < var9 && near.isAlive() && fairGame(master, near) && PhaseFx.samePhase(near, var7)) {
+                                        var9 = away;
+                                        var17 = near;
+                                    }
                                 }
                             }
 
