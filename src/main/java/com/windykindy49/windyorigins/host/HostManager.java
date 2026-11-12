@@ -101,6 +101,10 @@ public final class HostManager {
     private static final DustParticleEffect ARC_CYAN = new DustParticleEffect(new Vector3f(0.27F, 0.94F, 0.9F), 0.8F);
     private static final DustParticleEffect ARC_PINK = new DustParticleEffect(new Vector3f(0.94F, 0.24F, 0.78F), 0.7F);
     private static final Map<UUID, HostManager.State> STATES = new HashMap<>();
+    /** One open "what is that called?" per Host; see {@link #askNames}. */
+    private static final Map<UUID, HostManager.Ask> ASKS = new HashMap<>();
+    private static final int ASK_TICKS = 100;
+    private static int askCounter;
     private static final Map<UUID, Long> TURNED = new HashMap<>();
     private static final Map<UUID, UUID> TURNED_OWNER = new HashMap<>();
     private static final Map<UUID, Long> BLINDED = new HashMap<>();
@@ -141,6 +145,77 @@ public final class HostManager {
             var1.healthBefore = 0.0F;
             var1.listenUntil = 0L;
         }
+
+        ASKS.remove(var0.getUuid());
+    }
+
+    // ------------------------------------------------------------------ other players
+
+    /** Has the Host told Volta to leave other players alone? Kept as a resource, so it survives death and relog and the wheel can show it. */
+    public static boolean sparesPlayers(PlayerEntity host) {
+        return Powers.resource(host, "volta_spares", 0) > 0;
+    }
+
+    /** Another player, while the Host has players switched off: nothing of Volta's may touch them. */
+    private static boolean spared(ServerPlayerEntity host, Entity other) {
+        return other instanceof PlayerEntity && other != host && sparesPlayers(host);
+    }
+
+    // ------------------------------------------------------------------ names
+
+    private record Ask(int id, long deadline, java.util.function.BiConsumer<List<net.minecraft.util.Identifier>, List<net.minecraft.util.Identifier>> then) {
+    }
+
+    /**
+     * Asks the Host's own game what the words name. The server has no translations, the client has all of
+     * them. The answer comes back in a tick or two; a client that does not answer in five seconds counts as
+     * having answered "nothing", so the request still ends.
+     */
+    private static void askNames(
+        ServerPlayerEntity host, boolean block, String said, java.util.function.BiConsumer<List<net.minecraft.util.Identifier>, List<net.minecraft.util.Identifier>> then
+    ) {
+        int id = ++askCounter;
+        ASKS.put(host.getUuid(), new HostManager.Ask(id, (long)host.getServer().getTicks() + (long)ASK_TICKS, then));
+        HostNetworking.ask(host, id, block, said);
+    }
+
+    public static void answer(ServerPlayerEntity host, int id, List<net.minecraft.util.Identifier> exact, List<net.minecraft.util.Identifier> partial) {
+        HostManager.Ask ask = ASKS.get(host.getUuid());
+        if (ask == null || ask.id() != id) {
+            return;
+        }
+
+        ASKS.remove(host.getUuid());
+        if (isHost(host) && host.isAlive() && !isBroken(host)) {
+            ask.then().accept(exact, partial);
+        }
+    }
+
+    /** The open question of this Host, or -1. */
+    public static int openQuestion(ServerPlayerEntity host) {
+        HostManager.Ask ask = ASKS.get(host.getUuid());
+        return ask == null ? -1 : ask.id();
+    }
+
+    private static void tickAsks(MinecraftServer server) {
+        if (ASKS.isEmpty()) {
+            return;
+        }
+
+        List<Runnable> late = new ArrayList<>();
+        ASKS.entrySet().removeIf(entry -> {
+            if ((long)server.getTicks() < entry.getValue().deadline()) {
+                return false;
+            }
+
+            ServerPlayerEntity host = server.getPlayerManager().getPlayer(entry.getKey());
+            if (host != null && isHost(host) && host.isAlive() && !isBroken(host)) {
+                late.add(() -> entry.getValue().then().accept(List.of(), List.of()));
+            }
+
+            return true;
+        });
+        late.forEach(Runnable::run);
     }
 
     /** Before the worlds close: no lid is left standing open. */
@@ -150,6 +225,7 @@ public final class HostManager {
 
     public static void reset() {
         LIDS.clear();
+        ASKS.clear();
         STATES.clear();
         TURNED.clear();
         TURNED_OWNER.clear();
@@ -293,6 +369,8 @@ public final class HostManager {
     }
 
     public static void tick(MinecraftServer var0) {
+        tickAsks(var0);
+
         for (ServerPlayerEntity var2 : var0.getPlayerManager().getPlayerList()) {
             if (isHost(var2) && var2.isAlive()) {
                 if (var2.age % 200 == 20) {
@@ -485,6 +563,7 @@ public final class HostManager {
                 }
                 break;
             case STOP:
+                ASKS.remove(var0.getUuid());
                 var3.work.clear();
                 var3.later.clear();
                 var3.magnetEnds = 0L;
@@ -501,6 +580,18 @@ public final class HostManager {
                 break;
             case HELP:
                 say(var0, "help", 6);
+                break;
+            case PVP:
+                // 1: players are fair game, 0: hands off, anything else (the wheel): the other way round.
+                boolean spare = var2.number() == 0 || var2.number() != 1 && !sparesPlayers(var0);
+                Powers.setResource(var0, "volta_spares", spare ? 1 : 0);
+                if (spare) {
+                    // Whatever of hers is on a player right now lets go.
+                    VIRUS.entrySet().removeIf(entry -> entry.getValue().owner.equals(var0.getUuid()) && var0.getServer().getPlayerManager().getPlayer(entry.getKey()) != null);
+                }
+
+                PhaseFx.privateSound(var0, SoundEvents.BLOCK_LEVER_CLICK, 0.6F, spare ? 0.8F : 1.3F);
+                say(var0, spare ? "pvp_off" : "pvp_on", spare ? 0 : 1);
                 break;
             default:
                 String var8 = var2.topic() == null ? "hello" : var2.topic();
@@ -531,6 +622,11 @@ public final class HostManager {
                     && (var1 != HostCommand.PUPPET || var4 instanceof HostileEntity && MobGroups.of(var4) != MobGroups.Group.BOSS)
                     && (var1 != HostCommand.SWAP || MobGroups.of(var4) != MobGroups.Group.BOSS)) {
                     return strike(var0, var1, var4, var2) ? 0 : -1;
+                }
+
+                if (var4 == null && sparesPlayers(var0) && (var2.player() != null || lookTarget(var0, HACK_RANGE) instanceof PlayerEntity)) {
+                    say(var0, "spared", 2);
+                    return -1;
                 }
 
                 say(var0, var4 == null ? "no_target" : "cant_turn", 2);
@@ -619,11 +715,11 @@ public final class HostManager {
             case LIGHT:
                 return light(var0) ? 0 : -1;
             case DIG:
-                return dig(var0, var2.has(VoltaChat.FLAG_DOWN), var2.number());
+                return VoltaChat.thing(var2.subject()).isBlank() ? dig(var0, var2.has(VoltaChat.FLAG_DOWN), var2.number()) : mine(var0, var1, var2);
             case BUILD:
                 return build(var0, !var2.has(VoltaChat.FLAG_WALL), var2.number());
             case HARVEST:
-                return harvest(var0);
+                return VoltaChat.thing(var2.subject()).isBlank() ? harvest(var0) : mine(var0, var1, var2);
             case FIND:
                 if (var2.player() != null) {
                     ServerPlayerEntity var7 = var0.getServer().getPlayerManager().getPlayer(var2.player());
@@ -644,7 +740,7 @@ public final class HostManager {
     // ------------------------------------------------------------------ targeting
 
     private static boolean visible(ServerPlayerEntity var0, Entity var1) {
-        return var1 != var0 && var1.isAlive() && !var1.isSpectator() && PhaseFx.samePhase(var1, var0) && var0.canSee(var1);
+        return var1 != var0 && var1.isAlive() && !var1.isSpectator() && !spared(var0, var1) && PhaseFx.samePhase(var1, var0) && var0.canSee(var1);
     }
 
     /**
@@ -669,7 +765,7 @@ public final class HostManager {
         }
 
         LivingEntity var7 = lookTarget(var0, HACK_RANGE);
-        if (var7 != null) {
+        if (var7 != null && !spared(var0, var7)) {
             return var7;
         }
 
@@ -963,7 +1059,7 @@ public final class HostManager {
         Box box = host.getBoundingBox().expand(10.0);
         if (host.age % 5 == 0) {
             for (LivingEntity e : host.getWorld()
-                .getEntitiesByClass(LivingEntity.class, box, x -> x != host && x.isAlive() && PhaseFx.samePhase(x, host) && MobGroups.of(x) != MobGroups.Group.BOSS)) {
+                .getEntitiesByClass(LivingEntity.class, box, x -> x != host && x.isAlive() && !spared(host, x) && PhaseFx.samePhase(x, host) && MobGroups.of(x) != MobGroups.Group.BOSS)) {
                 e.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 12, 4, false, false, true), host);
                 e.addStatusEffect(new StatusEffectInstance(StatusEffects.MINING_FATIGUE, 12, 2, false, false, false), host);
             }
@@ -986,7 +1082,7 @@ public final class HostManager {
         }
 
         Entity found = st.siphon == null ? null : host.getServerWorld().getEntity(st.siphon);
-        if (now >= st.siphonEnds || !(found instanceof LivingEntity target) || !target.isAlive() || target.squaredDistanceTo(host) > 24.0 * 24.0 || !host.canSee(target)) {
+        if (now >= st.siphonEnds || !(found instanceof LivingEntity target) || !target.isAlive() || spared(host, target) || target.squaredDistanceTo(host) > 24.0 * 24.0 || !host.canSee(target)) {
             st.siphonEnds = 0L;
             st.siphon = null;
             HostNetworking.fx(host, HostNetworking.FX_STOP, 0, -1, host.getPos(), 0, 0);
@@ -1667,11 +1763,90 @@ public final class HostManager {
             float var4 = var3.getHardness(var1, var2);
             BlockEntity var5 = var1.getBlockEntity(var2);
             if (!var3.isAir() && var3.getFluidState().isEmpty() && !(var4 < 0.0F) && !(var4 >= 50.0F) && var5 == null) {
-                if (var0.interactionManager.tryBreakBlock(var2)) {
+                if (withTool(var0, var3, () -> var0.interactionManager.tryBreakBlock(var2))) {
                     hostFx(var0, ARC_CYAN, (double)var2.getX() + 0.5, (double)var2.getY() + 0.5, (double)var2.getZ() + 0.5, 3, 0.3, 0.3, 0.3, 0.0);
                 }
             }
         }
+    }
+
+    /**
+     * Volta works with the Host's tools. For the length of one block the right tool from the inventory is put
+     * in the Host's hand, wherever it lies: the block breaks as if the Host had mined it with that tool, so it
+     * drops what that tool gets out of it, Fortune and Silk Touch count, and the tool wears by one use.
+     * Without the tool the block still breaks, the way a bare hand breaks it: stone leaves nothing.
+     */
+    private static boolean withTool(ServerPlayerEntity host, BlockState state, java.util.function.BooleanSupplier work) {
+        PlayerInventory inventory = host.getInventory();
+        int hand = inventory.selectedSlot;
+        int slot = toolSlot(inventory, state);
+        if (slot < 0 && state.isToolRequired() && !host.isCreative()) {
+            HostManager.State st = state(host);
+            long now = host.getWorld().getTime();
+            if (now - st.toolNotice > 200L || st.toolNotice == 0L) {
+                // Once per job, not once per block.
+                say(host, "no_tool", 2);
+            }
+
+            st.toolNotice = now;
+        }
+
+        if (slot < 0 || slot == hand || hand < 0 || hand >= inventory.main.size()) {
+            return work.getAsBoolean();
+        }
+
+        ItemStack held = inventory.main.get(hand);
+        inventory.main.set(hand, inventory.main.get(slot));
+        inventory.main.set(slot, held);
+
+        try {
+            return work.getAsBoolean();
+        } finally {
+            // Back where they were: the tool one use older, or gone if that use was its last.
+            ItemStack tool = inventory.main.get(hand);
+            inventory.main.set(hand, inventory.main.get(slot));
+            inventory.main.set(slot, tool);
+        }
+    }
+
+    /** The slot of the tool for this block, or -1. What the Host holds wins if it does the job: the Host chose it. */
+    private static int toolSlot(PlayerInventory inventory, BlockState state) {
+        int hand = inventory.selectedSlot;
+        if (hand >= 0 && hand < inventory.main.size() && worksOn(inventory.main.get(hand), state) > 0.0F) {
+            return hand;
+        }
+
+        int best = -1;
+        float bestWorth = 0.0F;
+
+        for (int i = 0; i < inventory.main.size(); i++) {
+            float worth = worksOn(inventory.main.get(i), state);
+            if (worth > bestWorth) {
+                bestWorth = worth;
+                best = i;
+            }
+        }
+
+        return best;
+    }
+
+    /** 0 when the stack is not a tool for this block; otherwise the bigger the better. A tool on its last use is left alone. */
+    private static float worksOn(ItemStack stack, BlockState state) {
+        if (stack.isEmpty() || !(stack.getItem() instanceof net.minecraft.item.MiningToolItem) && !(stack.getItem() instanceof net.minecraft.item.ShearsItem)) {
+            return 0.0F;
+        }
+
+        if (stack.isDamageable() && stack.getMaxDamage() - stack.getDamage() <= 1) {
+            return 0.0F;
+        }
+
+        float speed = stack.getMiningSpeedMultiplier(state);
+        boolean fits = stack.isSuitableFor(state);
+        if (state.isToolRequired()) {
+            return fits ? 1000.0F + speed : 0.0F;
+        }
+
+        return speed > 1.0F ? speed : 0.0F;
     }
 
     private static ItemStack buildingBlocks(ServerPlayerEntity var0) {
@@ -1929,17 +2104,34 @@ public final class HostManager {
             return false;
         }
 
+        // Any part of it will do: the middle, the middle of a side or a corner. Nobody has to look straight at it.
         World world = host.getWorld();
-        double[][] probes = new double[][]{{0, 0, 0}, {0.45, 0, 0}, {-0.45, 0, 0}, {0, 0.42, 0}, {0, -0.42, 0}, {0, 0, 0.45}, {0, 0, -0.45}};
+        BlockPos twin = otherHalf(world, pos);
 
-        for (double[] probe : probes) {
+        for (double[] probe : SIGHT_PROBES) {
             BlockHitResult hit = world.raycast(new RaycastContext(eye, centre.add(probe[0], probe[1], probe[2]), ShapeType.VISUAL, FluidHandling.NONE, host));
-            if (hit.getType() == Type.MISS || hit.getBlockPos().equals(pos)) {
+            if (hit.getType() == Type.MISS || hit.getBlockPos().equals(pos) || hit.getBlockPos().equals(twin)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static final double[][] SIGHT_PROBES = new double[][]{
+        {0, 0, 0}, {0.45, 0, 0}, {-0.45, 0, 0}, {0, 0.42, 0}, {0, -0.42, 0}, {0, 0, 0.45}, {0, 0, -0.45},
+        {0.42, 0.4, 0.42}, {0.42, 0.4, -0.42}, {-0.42, 0.4, 0.42}, {-0.42, 0.4, -0.42},
+        {0.42, -0.4, 0.42}, {0.42, -0.4, -0.42}, {-0.42, -0.4, 0.42}, {-0.42, -0.4, -0.42}
+    };
+
+    /** The other half of a double chest: seeing one half is seeing the chest. */
+    private static BlockPos otherHalf(World world, BlockPos pos) {
+        BlockState state = world.getBlockState(pos);
+        if (state.getBlock() instanceof net.minecraft.block.ChestBlock && state.contains(net.minecraft.block.ChestBlock.CHEST_TYPE) && state.get(net.minecraft.block.ChestBlock.CHEST_TYPE) != net.minecraft.block.enums.ChestType.SINGLE) {
+            return pos.offset(net.minecraft.block.ChestBlock.getFacing(state));
+        }
+
+        return null;
     }
 
     private static final List<Object[]> LIDS = new ArrayList<>();
@@ -1982,12 +2174,60 @@ public final class HostManager {
      */
     private static boolean fetch(ServerPlayerEntity var0, String var1) {
         String var2 = VoltaChat.canonical(var1);
-        String var3 = var2 != null ? var2 : var1.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
+        String var3 = var1.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
         if (var3.isBlank()) {
             say(var0, "how_fetch", 6);
             return false;
         }
 
+        if (var2 != null && var1.trim().indexOf(' ') < 0) {
+            // One everyday word ("уголь", "iron", "алмазы") is the plain material: no need to ask what it is called.
+            if (!take(var0, stack -> matchesItem(stack, var2, false)) && !take(var0, stack -> matchesItem(stack, var2, true))) {
+                say(var0, "fetch_none", 2, var1);
+            }
+
+            return true;
+        }
+
+        askNames(var0, false, var1, (exact, partial) -> {
+            if (!exact.isEmpty()) {
+                // The words are the whole name of something: that thing or nothing, best match first.
+                for (net.minecraft.util.Identifier id : exact) {
+                    if (take(var0, stack -> Registries.ITEM.getId(stack.getItem()).equals(id))) {
+                        return;
+                    }
+                }
+
+                say(var0, "fetch_none", 2, var1);
+                return;
+            }
+
+            // Otherwise the everyday word, then anything the words are part of the name of, then the id itself.
+            if (var2 != null && (take(var0, stack -> matchesItem(stack, var2, false)) || take(var0, stack -> matchesItem(stack, var2, true)))) {
+                return;
+            }
+
+            if (!partial.isEmpty()) {
+                java.util.Set<net.minecraft.util.Identifier> any = new HashSet<>(partial);
+                if (take(var0, stack -> any.contains(Registries.ITEM.getId(stack.getItem())))) {
+                    return;
+                }
+            }
+
+            if (!take(var0, stack -> matchesItem(stack, var3, false)) && !take(var0, stack -> matchesItem(stack, var3, true))) {
+                // One answer whether there is none or it is merely out of sight: she is not a way to look through walls.
+                say(var0, "fetch_none", 2, var1);
+            }
+        });
+        return true;
+    }
+
+    /**
+     * Takes a stack of the first thing that fits out of the nearest container in sight and hands it to the
+     * Host. False when no container in sight holds such a thing; true when one did, even if the Host's
+     * pockets turned out to be full.
+     */
+    private static boolean take(ServerPlayerEntity var0, java.util.function.Predicate<ItemStack> wanted) {
         ServerWorld var4 = var0.getServerWorld();
         BlockPos var5 = var0.getBlockPos();
         List<LockableContainerBlockEntity> var6 = new ArrayList<>();
@@ -2015,7 +2255,7 @@ public final class HostManager {
 
             for (int var19 = 0; var19 < var17.size(); var19++) {
                 ItemStack var20 = var17.getStack(var19);
-                if (var20.isEmpty() || !matchesItem(var20, var3)) {
+                if (var20.isEmpty() || !wanted.test(var20)) {
                     continue;
                 }
 
@@ -2040,7 +2280,7 @@ public final class HostManager {
                 var17.markDirty();
                 if (var23 <= 0) {
                     say(var0, "nothing", 2);
-                    return false;
+                    return true;
                 }
 
                 HostNetworking.fx(var0, HostNetworking.FX_GRAB, 0, var24, Vec3d.ofCenter(var18), HostNetworking.CYAN, 22);
@@ -2055,12 +2295,11 @@ public final class HostManager {
             }
         }
 
-        // One answer whether there is none or it is merely out of sight: she is not a way to look through walls.
-        say(var0, "fetch_none", 2, var1);
-        return true;
+        return false;
     }
 
-    private static boolean matchesItem(ItemStack var0, String var1) {
+    /** Strict: the thing itself. Loose: also anything whose id merely contains the word. */
+    private static boolean matchesItem(ItemStack var0, String var1, boolean loose) {
         String var2 = Registries.ITEM.getId(var0.getItem()).getPath();
 
         return switch (var1) {
@@ -2070,8 +2309,180 @@ public final class HostManager {
             case "log" -> var0.isIn(ItemTags.LOGS);
             case "coal", "diamond", "emerald", "redstone" -> var2.equals(var1);
             case "lapis" -> var2.equals("lapis_lazuli");
-            default -> var2.equals(var1) || var2.contains(var1);
+            default -> var2.equals(var1) || loose && var2.contains(var1);
         };
+    }
+
+    // ------------------------------------------------------------------ mining by name
+
+    /**
+     * "Накопай камня", "mine 20 cobblestone", "сломай доски": the named block where the Host can see it, the
+     * nearest first and on through whatever of it touches. If the words turn out not to name any block, the
+     * request is what it would have been without them: a tunnel, or the vein under the crosshair.
+     */
+    private static int mine(ServerPlayerEntity host, HostCommand command, VoltaChat.Request request) {
+        String thing = VoltaChat.thing(request.subject());
+        String alias = VoltaChat.canonical(thing);
+        int number = request.number();
+        int limit = MathHelper.clamp(number <= 0 ? 16 : number, 1, 64);
+        boolean down = request.has(VoltaChat.FLAG_DOWN);
+        askNames(host, true, thing, (exact, partial) -> {
+            List<java.util.function.Predicate<BlockState>> wanted = new ArrayList<>();
+            if (!exact.isEmpty()) {
+                java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(exact);
+                wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
+            }
+
+            if (alias != null) {
+                // Strictly: "stone" must not take the stone bricks of somebody's wall with it.
+                wanted.add(state -> matchesOre(Registries.BLOCK.getId(state.getBlock()).getPath(), alias));
+            }
+
+            if (exact.isEmpty() && !partial.isEmpty()) {
+                java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(partial);
+                wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
+            }
+
+            if (wanted.isEmpty()) {
+                int extra = command == HostCommand.DIG ? dig(host, down, number) : harvest(host);
+                if (extra > 0) {
+                    addHeat(host, extra);
+                }
+
+                return;
+            }
+
+            ServerWorld world = host.getServerWorld();
+
+            for (java.util.function.Predicate<BlockState> one : wanted) {
+                List<BlockPos> found = reachable(host, one, limit);
+                if (found.isEmpty()) {
+                    continue;
+                }
+
+                HostManager.State st = state(host);
+                Text name = world.getBlockState(found.get(0)).getBlock().getName();
+
+                for (BlockPos pos : found) {
+                    st.work.add(() -> {
+                        tendril(host, pos);
+                        breakFor(host, world, pos);
+                    });
+                }
+
+                tendril(host, found.get(0));
+                PhaseFx.sound(host, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.5F, 1.9F);
+                say(host, "mine", 1, found.size(), name);
+                cast(host, 3);
+                addHeat(host, found.size() / 4);
+                return;
+            }
+
+            say(host, "mine_none", 2, thing);
+        });
+        return 0;
+    }
+
+    private static boolean matchesOre(String path, String alias) {
+        return switch (alias) {
+            case "diamond", "iron", "gold", "coal", "copper", "emerald", "redstone", "lapis" -> path.endsWith(alias + "_ore");
+            case "log" -> path.endsWith("_log") || path.endsWith("_stem");
+            default -> path.equals(alias);
+        };
+    }
+
+    private static boolean minable(ServerWorld world, BlockPos pos, BlockState state, BlockPos feet) {
+        if (state.isAir() || !state.getFluidState().isEmpty() || world.getBlockEntity(pos) != null) {
+            return false;
+        }
+
+        float hardness = state.getHardness(world, pos);
+        // Nothing unbreakable, and never the ground from under the Host's own feet or right beside them.
+        return hardness >= 0.0F && hardness < 50.0F && !(pos.getY() < feet.getY() && Math.abs(pos.getX() - feet.getX()) <= 1 && Math.abs(pos.getZ() - feet.getZ()) <= 1);
+    }
+
+    /**
+     * Up to {@code limit} blocks of the wanted kind: bare ones in sight, the one nearest the crosshair first,
+     * and what is joined to them. So she digs where the Host is looking, not the floor the Host stands on.
+     */
+    private static List<BlockPos> reachable(ServerPlayerEntity host, java.util.function.Predicate<BlockState> wanted, int limit) {
+        ServerWorld world = host.getServerWorld();
+        BlockPos feet = host.getBlockPos();
+        Vec3d eye = host.getEyePos();
+        Vec3d look = host.getRotationVec(1.0F);
+        List<BlockPos> bare = new ArrayList<>();
+
+        for (BlockPos pos : BlockPos.iterate(feet.add(-10, -6, -10), feet.add(10, 8, 10))) {
+            BlockState state = world.getBlockState(pos);
+            if (state.isAir() || !wanted.test(state) || !minable(world, pos, state, feet)) {
+                continue;
+            }
+
+            Vec3d to = Vec3d.ofCenter(pos).subtract(eye);
+            double distance = to.length();
+            if (distance > 12.0 || distance > 1.6 && to.multiply(1.0 / distance).dotProduct(look) < 0.35) {
+                continue;
+            }
+
+            for (Direction side : Direction.values()) {
+                BlockPos next = pos.offset(side);
+                if (!world.getBlockState(next).isOpaqueFullCube(world, next)) {
+                    bare.add(pos.toImmutable());
+                    break;
+                }
+            }
+        }
+
+        bare.sort(java.util.Comparator.comparingDouble(pos -> {
+            Vec3d to = Vec3d.ofCenter(pos).subtract(eye);
+            double distance = Math.max(0.001, to.length());
+            // Off the crosshair by a little is worth a block of distance.
+            return (1.0 - to.dotProduct(look) / distance) * 24.0 + distance * 0.25;
+        }));
+        List<BlockPos> out = new ArrayList<>();
+        HashSet<BlockPos> known = new HashSet<>();
+        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        int looked = 0;
+
+        for (BlockPos start : bare) {
+            if (out.size() >= limit || looked >= 160) {
+                break;
+            }
+
+            if (known.contains(start)) {
+                continue;
+            }
+
+            looked++;
+            if (!sees(host, start)) {
+                continue;
+            }
+
+            known.add(start);
+            queue.add(start);
+
+            while (!queue.isEmpty() && out.size() < limit) {
+                BlockPos at = queue.poll();
+                out.add(at);
+
+                for (BlockPos near : BlockPos.iterate(at.add(-1, -1, -1), at.add(1, 1, 1))) {
+                    if (known.contains(near)) {
+                        continue;
+                    }
+
+                    BlockState state = world.getBlockState(near);
+                    if (wanted.test(state) && minable(world, near, state, feet) && near.getSquaredDistance(eye) <= 14.0 * 14.0) {
+                        BlockPos kept = near.toImmutable();
+                        known.add(kept);
+                        queue.add(kept);
+                    }
+                }
+            }
+
+            queue.clear();
+        }
+
+        return out;
     }
 
     private static BlockPos plainStone(ServerPlayerEntity var0) {
@@ -2404,5 +2815,6 @@ public final class HostManager {
         long listenUntil;
         long lastLowHealthLine;
         String lastChat;
+        long toolNotice;
     }
 }
