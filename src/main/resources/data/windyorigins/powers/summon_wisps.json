@@ -1,0 +1,13 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 10,
+  "entity_action": {
+    "type": "windyorigins:wisps"
+  },
+  "key": {
+    "key": "key.origins.secondary_active"
+  },
+  "hud_render": {
+    "should_render": false
+  }
+}

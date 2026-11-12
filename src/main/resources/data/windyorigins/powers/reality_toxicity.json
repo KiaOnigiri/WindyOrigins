@@ -1,0 +1,80 @@
+{
+  "type": "origins:multiple",
+  "timer": {
+    "type": "origins:resource",
+    "min": 0,
+    "max": 500,
+    "survives_death": false,
+    "hud_render": {
+      "should_render": true,
+      "bar_index": 14,
+      "sprite_location": "windyorigins:textures/gui/phase_shift.png",
+      "condition": {
+        "type": "origins:power",
+        "power": "windyorigins:in_mirror_world",
+        "inverted": true
+      }
+    }
+  },
+  "tick_logic": {
+    "type": "origins:action_over_time",
+    "interval": 1,
+    "entity_action": {
+      "type": "origins:if_else",
+      "condition": {
+        "type": "origins:power",
+        "power": "windyorigins:in_mirror_world",
+        "inverted": true
+      },
+      "if_action": { "type": "origins:change_resource", "resource": "windyorigins:reality_toxicity_timer", "change": 1 },
+      "else_action": { "type": "origins:change_resource", "resource": "windyorigins:reality_toxicity_timer", "change": 0, "operation": "set" }
+    }
+  },
+  "debuff_stage": {
+    "type": "origins:action_over_time",
+    "interval": 20,
+    "condition": {
+      "type": "origins:resource",
+      "resource": "windyorigins:reality_toxicity_timer",
+      "comparison": ">=",
+      "compare_to": 200
+    },
+    "entity_action": {
+      "type": "origins:apply_effect",
+      "effects": [
+        { "effect": "minecraft:slowness", "duration": 40, "amplifier": 1 },
+        { "effect": "minecraft:weakness", "duration": 40, "amplifier": 1 }
+      ]
+    }
+  },
+  "damage_stage": {
+    "type": "origins:action_over_time",
+    "interval": 20,
+    "condition": {
+      "type": "origins:resource",
+      "resource": "windyorigins:reality_toxicity_timer",
+      "comparison": ">=",
+      "compare_to": 400
+    },
+    "entity_action": {
+      "type": "origins:damage",
+      "amount": 3,
+      "damage_type": "minecraft:magic"
+    }
+  },
+  "death_stage": {
+    "type": "origins:action_over_time",
+    "interval": 10,
+    "condition": {
+      "type": "origins:resource",
+      "resource": "windyorigins:reality_toxicity_timer",
+      "comparison": ">=",
+      "compare_to": 500
+    },
+    "entity_action": {
+      "type": "origins:damage",
+      "amount": 100000,
+      "damage_type": "minecraft:out_of_world"
+    }
+  }
+}

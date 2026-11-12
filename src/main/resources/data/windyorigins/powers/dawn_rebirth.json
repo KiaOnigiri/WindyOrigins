@@ -1,0 +1,44 @@
+{
+  "type": "apoli:prevent_death",
+  "damage_condition": {
+    "type": "apoli:in_tag",
+    "tag": "minecraft:bypasses_invulnerability",
+    "inverted": true
+  },
+  "condition": {
+    "type": "apoli:and",
+    "conditions": [
+      {
+        "type": "apoli:resource",
+        "resource": "windyorigins:inner_light",
+        "comparison": ">=",
+        "compare_to": 50
+      },
+      {
+        "type": "apoli:resource",
+        "resource": "windyorigins:rebirth_recharge",
+        "comparison": "==",
+        "compare_to": 0
+      }
+    ]
+  },
+  "entity_action": {
+    "type": "apoli:and",
+    "actions": [
+      {
+        "type": "windyorigins:luminian_revive"
+      },
+      {
+        "type": "apoli:change_resource",
+        "resource": "windyorigins:rebirth_recharge",
+        "change": 18000,
+        "operation": "set"
+      },
+      {
+        "type": "apoli:change_resource",
+        "resource": "windyorigins:inner_light",
+        "change": -50
+      }
+    ]
+  }
+}

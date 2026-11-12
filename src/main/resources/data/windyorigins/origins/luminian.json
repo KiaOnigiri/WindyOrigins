@@ -1,0 +1,19 @@
+{
+  "powers": [
+    "windyorigins:inner_light",
+    "windyorigins:radiance",
+    "windyorigins:dawn_rebirth",
+    "windyorigins:sunlit_mending",
+    "windyorigins:holy_light",
+    "windyorigins:dimming",
+    "windyorigins:beacon",
+    "windyorigins:undead_hatred",
+    "windyorigins:rebirth_recharge",
+    "windyorigins:rebirth_recharge_tick"
+  ],
+  "icon": {
+    "item": "minecraft:glowstone"
+  },
+  "impact": 1,
+  "order": 4
+}

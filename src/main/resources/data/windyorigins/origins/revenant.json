@@ -1,0 +1,22 @@
+{
+  "powers": [
+    "windyorigins:echo",
+    "windyorigins:possess",
+    "windyorigins:summon_wisps",
+    "windyorigins:faded_form",
+    "windyorigins:stillness",
+    "windyorigins:vengeance",
+    "windyorigins:soul_stride",
+    "windyorigins:faded_body",
+    "windyorigins:feeble_hands",
+    "windyorigins:light_garb",
+    "windyorigins:possession",
+    "windyorigins:possession_recharge",
+    "windyorigins:wisps"
+  ],
+  "icon": {
+    "item": "minecraft:soul_lantern"
+  },
+  "impact": 2,
+  "order": 7
+}

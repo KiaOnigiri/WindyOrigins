@@ -1,0 +1,13 @@
+{
+  "type": "apoli:active_self",
+  "entity_action": {
+    "type": "windyorigins:mark_of_death"
+  },
+  "cooldown": 10,
+  "key": {
+    "key": "key.origins.primary_active"
+  },
+  "hud_render": {
+    "should_render": false
+  }
+}

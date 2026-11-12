@@ -1,0 +1,47 @@
+{
+  "type": "apoli:climbing",
+  "hidden": true,
+  "allow_holding": true,
+  "condition": {
+    "type": "apoli:and",
+    "conditions": [
+      {
+        "type": "apoli:status_effect",
+        "effect": "windyorigins:blood_taste",
+        "min_amplifier": 1,
+        "max_amplifier": 1
+      },
+      {
+        "type": "apoli:collided_horizontally"
+      }
+    ]
+  },
+  "hold_condition": {
+    "type": "apoli:and",
+    "conditions": [
+      {
+        "type": "apoli:status_effect",
+        "effect": "windyorigins:blood_taste",
+        "min_amplifier": 1,
+        "max_amplifier": 1
+      },
+      {
+        "type": "apoli:or",
+        "conditions": [
+          {
+            "type": "apoli:block_collision",
+            "offset_x": 0.01,
+            "offset_z": 0.01,
+            "offset_y": 0
+          },
+          {
+            "type": "apoli:block_collision",
+            "offset_x": -0.01,
+            "offset_z": -0.01,
+            "offset_y": 0
+          }
+        ]
+      }
+    ]
+  }
+}

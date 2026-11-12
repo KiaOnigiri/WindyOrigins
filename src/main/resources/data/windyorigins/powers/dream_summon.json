@@ -1,0 +1,16 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 20,
+  "entity_action": {
+    "type": "windyorigins:dream_summon"
+  },
+  "key": {
+    "key": "key.saveToolbarActivator"
+  },
+  "hud_render": {
+    "should_render": false
+  },
+  "condition": {
+    "type": "windyorigins:in_dreams"
+  }
+}

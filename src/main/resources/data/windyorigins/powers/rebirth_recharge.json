@@ -1,0 +1,18 @@
+{
+  "type": "apoli:resource",
+  "hidden": true,
+  "min": 0,
+  "max": 18000,
+  "start_value": 0,
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 2,
+    "sprite_location": "windyorigins:textures/gui/luminian.png",
+    "condition": {
+      "type": "apoli:resource",
+      "resource": "windyorigins:rebirth_recharge",
+      "comparison": ">",
+      "compare_to": 0
+    }
+  }
+}

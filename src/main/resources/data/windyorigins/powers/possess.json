@@ -1,0 +1,13 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 20,
+  "entity_action": {
+    "type": "windyorigins:possess"
+  },
+  "key": {
+    "key": "key.origins.primary_active"
+  },
+  "hud_render": {
+    "should_render": false
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 600,
+  "entity_action": {
+    "type": "windyorigins:bat_form"
+  },
+  "key": {
+    "key": "key.origins.secondary_active"
+  },
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 1,
+    "sprite_location": "windyorigins:textures/gui/sanguine.png"
+  }
+}

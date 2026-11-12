@@ -1,0 +1,8 @@
+{
+  "type": "apoli:prevent_item_use",
+  "hidden": true,
+  "condition": {
+    "type": "apoli:status_effect",
+    "effect": "windyorigins:bat_form"
+  }
+}

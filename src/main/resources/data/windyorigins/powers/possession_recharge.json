@@ -1,0 +1,18 @@
+{
+  "type": "apoli:resource",
+  "hidden": true,
+  "min": 0,
+  "max": 1200,
+  "start_value": 0,
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 2,
+    "sprite_location": "windyorigins:textures/gui/revenant.png",
+    "condition": {
+      "type": "apoli:resource",
+      "resource": "windyorigins:possession_recharge",
+      "comparison": ">",
+      "compare_to": 0
+    }
+  }
+}

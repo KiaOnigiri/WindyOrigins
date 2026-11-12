@@ -1,0 +1,18 @@
+{
+  "powers": [
+    "windyorigins:volta",
+    "windyorigins:heat",
+    "windyorigins:volta_pranks",
+    "windyorigins:cyberpsychosis",
+    "windyorigins:chip_broken",
+    "windyorigins:chip_frame",
+    "windyorigins:chip_slot",
+    "windyorigins:power_hungry",
+    "windyorigins:short_circuit"
+  ],
+  "icon": {
+    "item": "minecraft:comparator"
+  },
+  "impact": 3,
+  "order": 8
+}

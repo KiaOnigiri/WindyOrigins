@@ -1,0 +1,19 @@
+{
+  "powers": [
+    "windyorigins:dream_touch",
+    "windyorigins:dream_enter",
+    "windyorigins:dream_powers",
+    "windyorigins:dream_summon",
+    "windyorigins:sleep_anywhere",
+    "windyorigins:phantom_kin",
+    "windyorigins:dream_sense",
+    "windyorigins:lullaby",
+    "windyorigins:drowsy",
+    "windyorigins:waking_frailty"
+  ],
+  "icon": {
+    "item": "minecraft:phantom_membrane"
+  },
+  "impact": 2,
+  "order": 9
+}

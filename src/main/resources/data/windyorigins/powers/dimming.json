@@ -1,0 +1,29 @@
+{
+  "type": "apoli:action_over_time",
+  "interval": 100,
+  "condition": {
+    "type": "apoli:resource",
+    "resource": "windyorigins:inner_light",
+    "comparison": "==",
+    "compare_to": 0
+  },
+  "entity_action": {
+    "type": "apoli:and",
+    "actions": [
+      {
+        "type": "apoli:damage",
+        "amount": 1.0,
+        "damage_type": "minecraft:magic"
+      },
+      {
+        "type": "apoli:apply_effect",
+        "effect": {
+          "effect": "minecraft:weakness",
+          "duration": 120,
+          "amplifier": 0,
+          "show_particles": false
+        }
+      }
+    ]
+  }
+}

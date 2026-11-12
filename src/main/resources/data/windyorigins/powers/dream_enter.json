@@ -1,0 +1,13 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 20,
+  "entity_action": {
+    "type": "windyorigins:dream_enter"
+  },
+  "key": {
+    "key": "key.origins.secondary_active"
+  },
+  "hud_render": {
+    "should_render": false
+  }
+}

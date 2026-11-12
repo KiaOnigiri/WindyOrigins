@@ -1,0 +1,19 @@
+{
+  "powers": [
+    "windyorigins:phase_shift",
+    "windyorigins:banishment_punch",
+    "windyorigins:harmless_reflection",
+    "windyorigins:spawn_in_mirror",
+    "windyorigins:glass_body",
+    "windyorigins:reality_toxicity",
+    "windyorigins:water_phobia",
+    "windyorigins:reflected_pain",
+    "windyorigins:guilt",
+    "windyorigins:glass_skin"
+  ],
+  "icon": {
+    "item": "minecraft:glass"
+  },
+  "order": 1,
+  "impact": 3
+}

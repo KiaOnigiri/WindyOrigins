@@ -1,0 +1,21 @@
+{
+  "type": "apoli:conditioned_attribute",
+  "tick_rate": 20,
+  "modifier": {
+    "attribute": "minecraft:generic.movement_speed",
+    "value": -0.1,
+    "operation": "multiply_base"
+  },
+  "condition": {
+    "type": "apoli:and",
+    "conditions": [
+      {
+        "type": "apoli:daytime"
+      },
+      {
+        "type": "windyorigins:in_dreams",
+        "inverted": true
+      }
+    ]
+  }
+}

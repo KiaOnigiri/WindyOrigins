@@ -1,0 +1,15 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 240,
+  "entity_action": {
+    "type": "windyorigins:fold_knot"
+  },
+  "key": {
+    "key": "key.saveToolbarActivator"
+  },
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 3,
+    "sprite_location": "windyorigins:textures/gui/folded.png"
+  }
+}

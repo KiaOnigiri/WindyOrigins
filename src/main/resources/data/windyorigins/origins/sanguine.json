@@ -1,0 +1,31 @@
+{
+  "powers": [
+    "windyorigins:blood_thirst",
+    "windyorigins:bite",
+    "windyorigins:blood_taste",
+    "windyorigins:thirst",
+    "windyorigins:vampirism",
+    "windyorigins:blood_sense",
+    "windyorigins:bat_form",
+    "windyorigins:day_rest",
+    "windyorigins:sunburn",
+    "windyorigins:aspen",
+    "windyorigins:running_water",
+    "windyorigins:undead_blood",
+    "windyorigins:thirst_speed",
+    "windyorigins:beast_speed",
+    "windyorigins:beast_fury",
+    "windyorigins:taste_climb",
+    "windyorigins:taste_people",
+    "windyorigins:taste_peaceful",
+    "windyorigins:taste_creeper",
+    "windyorigins:taste_slime",
+    "windyorigins:bat_wings",
+    "windyorigins:bat_hidden"
+  ],
+  "icon": {
+    "item": "minecraft:redstone"
+  },
+  "impact": 3,
+  "order": 6
+}

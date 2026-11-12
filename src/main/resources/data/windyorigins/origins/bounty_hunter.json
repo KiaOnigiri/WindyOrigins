@@ -1,0 +1,25 @@
+{
+  "powers": [
+    "windyorigins:mark_of_death",
+    "windyorigins:duelist",
+    "windyorigins:crippling_shot",
+    "windyorigins:pursuit",
+    "windyorigins:dossier",
+    "windyorigins:blood_money",
+    "windyorigins:free_step",
+    "windyorigins:heavy_weapon",
+    "windyorigins:weakened_strikes",
+    "windyorigins:exposed",
+    "windyorigins:interference_shock",
+    "windyorigins:scarce_loot",
+    "windyorigins:despised_mercenary",
+    "windyorigins:contract_timer",
+    "windyorigins:mark_recharge"
+  ],
+  "icon": {
+    "item": "minecraft:crossbow"
+  },
+  "impact": 2,
+  "order": 2,
+  "loading_priority": 0
+}

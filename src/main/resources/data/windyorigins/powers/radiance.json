@@ -1,0 +1,13 @@
+{
+  "type": "apoli:self_glow",
+  "use_teams": false,
+  "red": 1.0,
+  "green": 0.82,
+  "blue": 0.35,
+  "condition": {
+    "type": "apoli:resource",
+    "resource": "windyorigins:inner_light",
+    "comparison": ">",
+    "compare_to": 0
+  }
+}

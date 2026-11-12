@@ -1,0 +1,20 @@
+{
+  "powers": [
+    "windyorigins:fold",
+    "windyorigins:fold_rifle",
+    "windyorigins:fold_hover",
+    "windyorigins:fold_step",
+    "windyorigins:fold_knot",
+    "windyorigins:fold_pocket",
+    "windyorigins:half_weight",
+    "windyorigins:thin_frame",
+    "windyorigins:weak_grip",
+    "windyorigins:shot_trace",
+    "windyorigins:fold_invisible"
+  ],
+  "icon": {
+    "item": "windyorigins:fold_rifle"
+  },
+  "impact": 2,
+  "order": 5
+}

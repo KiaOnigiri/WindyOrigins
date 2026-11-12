@@ -1,0 +1,7 @@
+{
+  "type": "apoli:invisibility",
+  "render_armor": false,
+  "condition": {
+    "type": "windyorigins:still"
+  }
+}

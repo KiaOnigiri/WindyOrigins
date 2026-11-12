@@ -1,0 +1,21 @@
+{
+  "powers": [
+    "windyorigins:chill",
+    "windyorigins:frost_walk",
+    "windyorigins:frost_aura",
+    "windyorigins:frost_touch",
+    "windyorigins:ice_coffin",
+    "windyorigins:ice_wall",
+    "windyorigins:permafrost",
+    "windyorigins:cold_blooded",
+    "windyorigins:thaw",
+    "windyorigins:meltable",
+    "windyorigins:raw_diet",
+    "windyorigins:coffin_stillness"
+  ],
+  "icon": {
+    "item": "minecraft:blue_ice"
+  },
+  "impact": 2,
+  "order": 3
+}

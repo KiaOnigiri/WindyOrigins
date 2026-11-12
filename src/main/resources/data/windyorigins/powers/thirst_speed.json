@@ -1,0 +1,15 @@
+{
+  "type": "apoli:conditioned_attribute",
+  "tick_rate": 10,
+  "hidden": true,
+  "modifier": {
+    "attribute": "minecraft:generic.movement_speed",
+    "value": 0.2,
+    "operation": "multiply_base"
+  },
+  "condition": {
+    "type": "apoli:food_level",
+    "comparison": "<=",
+    "compare_to": 10
+  }
+}

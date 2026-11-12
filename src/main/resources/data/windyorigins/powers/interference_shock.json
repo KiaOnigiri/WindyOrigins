@@ -1,0 +1,71 @@
+{
+  "type": "apoli:multiple",
+  "icd": {
+    "type": "apoli:resource",
+    "min": 0,
+    "max": 180
+  },
+  "tick_icd": {
+    "type": "apoli:action_over_time",
+    "interval": 1,
+    "condition": {
+      "type": "apoli:resource",
+      "resource": "windyorigins:interference_shock_icd",
+      "comparison": ">",
+      "compare_to": 0
+    },
+    "entity_action": {
+      "type": "apoli:change_resource",
+      "resource": "windyorigins:interference_shock_icd",
+      "change": -1
+    }
+  },
+  "on_damage": {
+    "type": "apoli:action_when_damage_taken",
+    "condition": {
+      "type": "apoli:and",
+      "conditions": [
+        { "type": "windyorigins:has_active_mark", "inverted": true },
+        {
+          "type": "apoli:resource",
+          "resource": "windyorigins:interference_shock_icd",
+          "comparison": "==",
+          "compare_to": 0
+        }
+      ]
+    },
+    "entity_action": {
+      "type": "apoli:and",
+      "actions": [
+        {
+          "type": "apoli:apply_effect",
+          "effect": {
+            "effect": "minecraft:nausea",
+            "duration": 80,
+            "amplifier": 0,
+            "is_ambient": false,
+            "show_particles": false,
+            "show_icon": true
+          }
+        },
+        {
+          "type": "apoli:apply_effect",
+          "effect": {
+            "effect": "minecraft:slowness",
+            "duration": 80,
+            "amplifier": 0,
+            "is_ambient": false,
+            "show_particles": false,
+            "show_icon": true
+          }
+        },
+        {
+          "type": "apoli:change_resource",
+          "resource": "windyorigins:interference_shock_icd",
+          "change": 180,
+          "operation": "set"
+        }
+      ]
+    }
+  }
+}

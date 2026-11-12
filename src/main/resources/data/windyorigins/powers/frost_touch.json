@@ -1,0 +1,13 @@
+{
+  "type": "apoli:target_action_on_hit",
+  "cooldown": 1,
+  "entity_action": {
+    "type": "apoli:apply_effect",
+    "effect": {
+      "effect": "minecraft:slowness",
+      "duration": 40,
+      "amplifier": 0,
+      "show_particles": true
+    }
+  }
+}

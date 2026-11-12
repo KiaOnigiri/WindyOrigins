@@ -1,9 +1,6 @@
 plugins {
-    // Must be >= the Loom version used to build any mod jar in libs/.
-    // Origins/Apoli/Calio for 1.20.1 ship built with Loom 1.6.x, so 1.5 is rejected.
-    // 1.6 needs Gradle >= 8.6; the wrapper here is 8.7, so nothing else changes.
-    id 'fabric-loom' version '1.6-SNAPSHOT'
-    id 'maven-publish'
+    // Loom 1.11 needs Gradle 8.12 or newer; the wrapper here is 8.14.3.
+    id 'fabric-loom' version '1.11-SNAPSHOT'
 }
 
 version = project.mod_version
@@ -14,18 +11,22 @@ base {
 }
 
 repositories {
-    // Cardinal Components API (Apoli's component library — see dependencies block).
+    // Cardinal Components API and PlayerAbilityLib, pulled in by Apoli.
     maven { url = 'https://maven.ladysnake.org/releases' }
-    // Fallback maven for Origins / Apoli / Calio if you prefer coordinates over local jars.
-    maven { url = 'https://api.modrinth.com/maven' }
     maven { url = 'https://maven.jamieswhiteshirt.com/libs-release' }
     maven { url = 'https://maven.shedaniel.me/' }
-    maven { url = 'https://maven.terraformersmc.com/releases/' }
+    maven { url = 'https://maven.terraformersmc.com/' }
+    // Origins, Apoli and Calio are published through JitPack.
+    maven { url = 'https://jitpack.io' }
+    maven { url = 'https://api.modrinth.com/maven' }
     mavenCentral()
 }
 
 loom {
+    mixin { defaultRefmapName = 'windyorigins-refmap.json' }
+
     runs {
+        // A second client, for trying the origins against another player.
         client2 {
             client()
             configName = "Minecraft Client 2"
@@ -42,56 +43,10 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // ---------------------------------------------------------------------
-    // Origins / Apoli / Calio
-    //
-    // RECOMMENDED: drop the exact jars from your own modpack into libs/ so the
-    // versions match your game 1:1. Loom remaps them for the dev environment.
-    // ---------------------------------------------------------------------
-    modImplementation fileTree(dir: 'libs', include: ['*.jar'])
-
-    // ---------------------------------------------------------------------
-    // Cardinal Components API — needed at COMPILE time only.
-    //
-    // PowerHolderComponent.KEY is a CCA ComponentKey, so javac must see these
-    // classes. Apoli bundles CCA inside its own jar (include(modApi(...))), so
-    // it IS present at runtime — but jars added via fileTree/files() carry no
-    // dependency metadata, which is why the classpath was missing it.
-    // Version 5.2.1 is exactly what Apoli 2.9.1+mc.1.20.1 was built against.
-    // Do NOT wrap these in include{} — that would bundle CCA a second time.
-    // ---------------------------------------------------------------------
-    modImplementation "dev.onyxstudios.cardinal-components-api:cardinal-components-base:${project.cca_version}"
-    modImplementation "dev.onyxstudios.cardinal-components-api:cardinal-components-entity:${project.cca_version}"
-
-    // ---------------------------------------------------------------------
-    // Dev-runtime only (needed by `gradlew runClient` / `runServer`).
-    //
-    // Origins hard-depends on PlayerAbilityLib and Cloth Config. In a real
-    // modpack they are already present (Apoli bundles PAL, and Cloth Config is
-    // installed as a normal mod), but the dev runtime does not unpack nested
-    // jars from libs/, so Fabric Loader reports them as missing.
-    //
-    // We never reference these classes in code -> modRuntimeOnly, not
-    // modImplementation, so they stay off the compile classpath.
-    // Versions match Origins 1.10.2+mc.1.20.1 / Apoli 2.9.1+mc.1.20.1.
-    // ---------------------------------------------------------------------
-    modRuntimeOnly "io.github.ladysnake:PlayerAbilityLib:${project.pal_version}"
-    modRuntimeOnly("me.shedaniel.cloth:cloth-config-fabric:${project.clothconfig_version}") {
-        exclude(group: "net.fabricmc.fabric-api")
-    }
-
-    // Attribute libraries used by vanilla Origins powers (extra_reach on Enderian,
-    // swim_speed on Merling). Bundled inside Origins/Apoli in a real install, so
-    // without them the dev runtime logs "Identifier ... was not registered in
-    // registry minecraft:attribute" and skips those two powers. Harmless for
-    // MirroredOrigin itself, but it keeps the dev world faithful to the real one.
-    modRuntimeOnly "com.jamieswhiteshirt:reach-entity-attributes:${project.reach_version}"
-    modRuntimeOnly "maven.modrinth:AdditionalEntityAttributes:${project.aea_version}"
-
-    // Alternative (comment out the fileTree line above and adjust versions):
-    // modImplementation 'maven.modrinth:origins:1.10.0+1.20.1'
-    // modImplementation 'maven.modrinth:apoli:2.10.0+1.20.1'
-    // modImplementation 'maven.modrinth:calio:1.11.0+1.20.1'
+    // Origins brings Apoli, Calio and their own libraries with it; no jars in libs/ are needed.
+    modImplementation "com.github.apace100:origins-fabric:${project.origins_version}"
+    modImplementation "com.github.apace100:apoli:${project.apoli_version}"
+    modImplementation "com.github.apace100:calio:${project.calio_version}"
 }
 
 processResources {
@@ -107,13 +62,6 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
-    withSourcesJar()
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
-}
-
-jar {
-    from('LICENSE') {
-        rename { "${it}_${project.base.archivesName.get()}" }
-    }
 }

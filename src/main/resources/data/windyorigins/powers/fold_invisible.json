@@ -1,0 +1,8 @@
+{
+  "type": "apoli:invisibility",
+  "hidden": true,
+  "render_armor": false,
+  "condition": {
+    "type": "windyorigins:folded_away"
+  }
+}

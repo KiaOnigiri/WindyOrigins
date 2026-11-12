@@ -1,0 +1,21 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 200,
+  "condition": {
+    "type": "apoli:resource",
+    "resource": "windyorigins:chill",
+    "comparison": ">=",
+    "compare_to": 30
+  },
+  "entity_action": {
+    "type": "windyorigins:ice_wall"
+  },
+  "key": {
+    "key": "key.origins.secondary_active"
+  },
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 3,
+    "sprite_location": "windyorigins:textures/gui/frostborn.png"
+  }
+}

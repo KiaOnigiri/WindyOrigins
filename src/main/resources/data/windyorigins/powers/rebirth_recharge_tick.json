@@ -1,0 +1,16 @@
+{
+  "type": "apoli:action_over_time",
+  "hidden": true,
+  "interval": 20,
+  "condition": {
+    "type": "apoli:resource",
+    "resource": "windyorigins:rebirth_recharge",
+    "comparison": ">",
+    "compare_to": 0
+  },
+  "entity_action": {
+    "type": "apoli:change_resource",
+    "resource": "windyorigins:rebirth_recharge",
+    "change": -20
+  }
+}

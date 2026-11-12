@@ -1,0 +1,15 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 100,
+  "entity_action": {
+    "type": "windyorigins:fold_step"
+  },
+  "key": {
+    "key": "key.origins.secondary_active"
+  },
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 2,
+    "sprite_location": "windyorigins:textures/gui/folded.png"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "type": "apoli:action_over_time",
+  "interval": 20,
+  "condition": {
+    "type": "apoli:resource",
+    "resource": "windyorigins:chill",
+    "comparison": "==",
+    "compare_to": 0
+  },
+  "entity_action": {
+    "type": "apoli:and",
+    "actions": [
+      {
+        "type": "apoli:apply_effect",
+        "effect": {
+          "effect": "minecraft:weakness",
+          "duration": 50,
+          "amplifier": 0,
+          "show_particles": false
+        }
+      },
+      {
+        "type": "apoli:apply_effect",
+        "effect": {
+          "effect": "minecraft:slowness",
+          "duration": 50,
+          "amplifier": 0,
+          "show_particles": false
+        }
+      }
+    ]
+  }
+}

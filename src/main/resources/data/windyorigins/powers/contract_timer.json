@@ -1,0 +1,15 @@
+{
+  "type": "apoli:resource",
+  "hidden": true,
+  "min": 0,
+  "max": 1200,
+  "start_value": 0,
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 1,
+    "sprite_location": "windyorigins:textures/gui/bounty_hunter.png",
+    "condition": {
+      "type": "windyorigins:has_active_mark"
+    }
+  }
+}

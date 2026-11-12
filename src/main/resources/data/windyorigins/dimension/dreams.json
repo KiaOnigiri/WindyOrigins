@@ -1,0 +1,13 @@
+{
+  "type": "windyorigins:dreams",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "windyorigins:dream",
+      "layers": [],
+      "lakes": false,
+      "features": false,
+      "structure_overrides": []
+    }
+  }
+}

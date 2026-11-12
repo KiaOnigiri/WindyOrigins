@@ -1,0 +1,308 @@
+{
+  "bounty.mark": {
+    "subtitle": "subtitles.windyorigins.bounty.mark",
+    "sounds": [
+      {
+        "name": "minecraft:block.bell.use",
+        "type": "event"
+      }
+    ]
+  },
+  "bounty.hunted": {
+    "subtitle": "subtitles.windyorigins.bounty.hunted",
+    "sounds": [
+      {
+        "name": "minecraft:ambient.cave",
+        "type": "event"
+      }
+    ]
+  },
+  "bounty.complete": {
+    "subtitle": "subtitles.windyorigins.bounty.complete",
+    "sounds": [
+      {
+        "name": "minecraft:ui.toast.challenge_complete",
+        "type": "event"
+      }
+    ]
+  },
+  "bounty.broken": {
+    "subtitle": "subtitles.windyorigins.bounty.broken",
+    "sounds": [
+      {
+        "name": "minecraft:item.shield.break",
+        "type": "event"
+      }
+    ]
+  },
+  "bounty.ready": {
+    "subtitle": "subtitles.windyorigins.bounty.ready",
+    "sounds": [
+      {
+        "name": "minecraft:item.crossbow.loading_end",
+        "type": "event"
+      }
+    ]
+  },
+  "bounty.dodge": {
+    "subtitle": "subtitles.windyorigins.bounty.dodge",
+    "sounds": [
+      {
+        "name": "minecraft:entity.player.attack.sweep",
+        "type": "event"
+      }
+    ]
+  },
+  "bounty.deny": {
+    "subtitle": "subtitles.windyorigins.bounty.deny",
+    "sounds": [
+      {
+        "name": "minecraft:block.dispenser.fail",
+        "type": "event"
+      }
+    ]
+  },
+  "frost.coffin": {
+    "subtitle": "subtitles.windyorigins.frost.coffin",
+    "sounds": [
+      {
+        "name": "minecraft:block.glass.place",
+        "type": "event"
+      }
+    ]
+  },
+  "frost.coffin_break": {
+    "subtitle": "subtitles.windyorigins.frost.coffin_break",
+    "sounds": [
+      {
+        "name": "minecraft:block.glass.break",
+        "type": "event"
+      }
+    ]
+  },
+  "frost.wall": {
+    "subtitle": "subtitles.windyorigins.frost.wall",
+    "sounds": [
+      {
+        "name": "minecraft:block.amethyst_block.place",
+        "type": "event"
+      }
+    ]
+  },
+  "frost.freeze": {
+    "subtitle": "subtitles.windyorigins.frost.freeze",
+    "sounds": [
+      {
+        "name": "minecraft:block.powder_snow.step",
+        "type": "event"
+      }
+    ]
+  },
+  "luminian.revive": {
+    "subtitle": "subtitles.windyorigins.luminian.revive",
+    "sounds": [
+      {
+        "name": "minecraft:item.totem.use",
+        "type": "event"
+      }
+    ]
+  },
+  "luminian.fade": {
+    "subtitle": "subtitles.windyorigins.luminian.fade",
+    "sounds": [
+      {
+        "name": "minecraft:block.beacon.deactivate",
+        "type": "event"
+      }
+    ]
+  },
+  "folded.shot": {
+    "subtitle": "subtitles.windyorigins.folded.shot",
+    "sounds": [
+      {
+        "name": "minecraft:entity.firework_rocket.blast",
+        "type": "event"
+      }
+    ]
+  },
+  "folded.charge": {
+    "subtitle": "subtitles.windyorigins.folded.charge",
+    "sounds": [
+      {
+        "name": "minecraft:block.respawn_anchor.charge",
+        "type": "event"
+      }
+    ]
+  },
+  "folded.rifle": {
+    "subtitle": "subtitles.windyorigins.folded.rifle",
+    "sounds": [
+      {
+        "name": "minecraft:entity.enderman.teleport",
+        "type": "event"
+      }
+    ]
+  },
+  "folded.step": {
+    "subtitle": "subtitles.windyorigins.folded.step",
+    "sounds": [
+      {
+        "name": "minecraft:entity.illusioner.mirror_move",
+        "type": "event"
+      }
+    ]
+  },
+  "folded.point": {
+    "subtitle": "subtitles.windyorigins.folded.point",
+    "sounds": [
+      {
+        "name": "minecraft:block.end_portal_frame.fill",
+        "type": "event"
+      }
+    ]
+  },
+  "folded.hover": {
+    "subtitle": "subtitles.windyorigins.folded.hover",
+    "sounds": [
+      {
+        "name": "minecraft:block.beacon.ambient",
+        "type": "event"
+      }
+    ]
+  },
+  "sanguine.bite": {
+    "subtitle": "subtitles.windyorigins.sanguine.bite",
+    "sounds": [
+      {
+        "name": "minecraft:entity.generic.drink",
+        "type": "event"
+      }
+    ]
+  },
+  "sanguine.bats": {
+    "subtitle": "subtitles.windyorigins.sanguine.bats",
+    "sounds": [
+      {
+        "name": "minecraft:entity.bat.takeoff",
+        "type": "event"
+      }
+    ]
+  },
+  "sanguine.sizzle": {
+    "subtitle": "subtitles.windyorigins.sanguine.sizzle",
+    "sounds": [
+      {
+        "name": "minecraft:block.fire.extinguish",
+        "type": "event"
+      }
+    ]
+  },
+  "sanguine.rest": {
+    "subtitle": "subtitles.windyorigins.sanguine.rest",
+    "sounds": [
+      {
+        "name": "minecraft:block.respawn_anchor.set_spawn",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.echo": {
+    "subtitle": "subtitles.windyorigins.revenant.echo",
+    "sounds": [
+      {
+        "name": "minecraft:particle.soul_escape",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.possess": {
+    "subtitle": "subtitles.windyorigins.revenant.possess",
+    "sounds": [
+      {
+        "name": "minecraft:entity.vex.charge",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.release": {
+    "subtitle": "subtitles.windyorigins.revenant.release",
+    "sounds": [
+      {
+        "name": "minecraft:block.soul_sand.break",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.whisper": {
+    "subtitle": "subtitles.windyorigins.revenant.whisper",
+    "sounds": [
+      {
+        "name": "minecraft:ambient.soul_sand_valley.mood",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.wisps": {
+    "subtitle": "subtitles.windyorigins.revenant.wisps",
+    "sounds": [
+      {
+        "name": "minecraft:entity.allay.ambient_with_item",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.vengeance": {
+    "subtitle": "subtitles.windyorigins.revenant.vengeance",
+    "sounds": [
+      {
+        "name": "minecraft:entity.warden.sonic_charge",
+        "type": "event"
+      }
+    ]
+  },
+  "revenant.fade": {
+    "subtitle": "subtitles.windyorigins.revenant.fade",
+    "sounds": [
+      {
+        "name": "minecraft:block.sculk_shrieker.shriek",
+        "type": "event"
+      }
+    ]
+  },
+  "common.deny": {
+    "subtitle": "subtitles.windyorigins.common.deny",
+    "sounds": [
+      {
+        "name": "minecraft:block.dispenser.fail",
+        "type": "event"
+      }
+    ]
+  },
+  "dream.lull": {
+    "subtitle": "subtitles.windyorigins.dream.lull",
+    "sounds": [
+      {
+        "name": "minecraft:block.amethyst_block.resonate",
+        "type": "event"
+      }
+    ]
+  },
+  "dream.enter": {
+    "subtitle": "subtitles.windyorigins.dream.enter",
+    "sounds": [
+      {
+        "name": "minecraft:block.portal.travel",
+        "type": "event"
+      }
+    ]
+  },
+  "dream.wake": {
+    "subtitle": "subtitles.windyorigins.dream.wake",
+    "sounds": [
+      {
+        "name": "minecraft:block.beacon.activate",
+        "type": "event"
+      }
+    ]
+  }
+}

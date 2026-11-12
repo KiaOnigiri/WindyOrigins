@@ -1,6 +1,14 @@
 {
   "replace": false,
   "origins": [
-    "mirroredorigin:mirrored"
+    "windyorigins:mirrored",
+    "windyorigins:bounty_hunter",
+    "windyorigins:frostborn",
+    "windyorigins:luminian",
+    "windyorigins:folded",
+    "windyorigins:sanguine",
+    "windyorigins:revenant",
+    "windyorigins:host",
+    "windyorigins:dreamwalker"
   ]
 }

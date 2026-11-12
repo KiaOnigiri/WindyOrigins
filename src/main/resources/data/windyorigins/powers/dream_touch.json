@@ -1,0 +1,15 @@
+{
+  "type": "apoli:active_self",
+  "cooldown": 200,
+  "entity_action": {
+    "type": "windyorigins:dream_touch"
+  },
+  "key": {
+    "key": "key.origins.primary_active"
+  },
+  "hud_render": {
+    "should_render": true,
+    "bar_index": 1,
+    "sprite_location": "windyorigins:textures/gui/dreamwalker.png"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "apoli:action_over_time",
+  "interval": 60,
+  "condition": {
+    "type": "apoli:exposed_to_sun"
+  },
+  "entity_action": {
+    "type": "apoli:heal",
+    "amount": 1.0
+  }
+}
