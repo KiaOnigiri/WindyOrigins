@@ -266,6 +266,8 @@ public final class HostManager {
         PhaseFx.privateSound(var0, SoundEvents.BLOCK_BEACON_DEACTIVATE, 1.0F, 0.5F);
         hostFx(var0, ParticleTypes.ELECTRIC_SPARK, var0.getX(), var0.getEyeY(), var0.getZ(), 30, 0.3, 0.3, 0.3, 0.4);
         var0.sendMessage(Text.translatable("message.windyorigins.volta.chip_broken_hint", REPAIR_KIT.getName()).formatted(Formatting.RED), true);
+        // The recipe goes to chat, where it stays and can be scrolled back to.
+        var0.sendMessage(Text.translatable("message.windyorigins.volta.chip_recipe", REPAIR_KIT.getName()).formatted(Formatting.GRAY), false);
     }
 
     /** The repair kit, held and used: the chip comes back, warm, and Volta with it. */
@@ -293,6 +295,11 @@ public final class HostManager {
     public static void tick(MinecraftServer var0) {
         for (ServerPlayerEntity var2 : var0.getPlayerManager().getPlayerList()) {
             if (isHost(var2) && var2.isAlive()) {
+                if (var2.age % 200 == 20) {
+                    // Every Host knows how to mend the chip: the recipe is in the book without being found first.
+                    var2.unlockRecipes(new net.minecraft.util.Identifier[]{Powers.id("chip_repair_kit")});
+                }
+
                 HostManager.State var3 = state(var2);
                 long var4 = var2.getWorld().getTime();
                 boolean var6 = var2.hasStatusEffect(WindyEffects.CYBERPSYCHOSIS);

@@ -75,5 +75,9 @@ public class ChipRepairItem extends Item {
     @Override
     public void appendTooltip(ItemStack stack, World world, java.util.List<Text> tooltip, net.minecraft.client.item.TooltipContext context) {
         tooltip.add(Text.translatable("item.windyorigins.chip_repair_kit.tooltip").formatted(Formatting.GRAY));
+        tooltip.add(Text.translatable("item.windyorigins.chip_repair_kit.recipe").formatted(Formatting.DARK_AQUA));
+        tooltip.add(Text.translatable("item.windyorigins.chip_repair_kit.recipe.top").formatted(Formatting.DARK_GRAY));
+        tooltip.add(Text.translatable("item.windyorigins.chip_repair_kit.recipe.middle").formatted(Formatting.DARK_GRAY));
+        tooltip.add(Text.translatable("item.windyorigins.chip_repair_kit.recipe.bottom").formatted(Formatting.DARK_GRAY));
     }
 }
