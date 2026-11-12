@@ -56,7 +56,7 @@ public class VoltaWheelScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double var1, double var3, double var5) {
+    public boolean mouseScrolled(double var1, double var3, double sideways, double var5) {
         int var7 = (HostCommand.WHEEL + 8 - 1) / 8;
         this.page = Math.floorMod(this.page + (var5 > 0.0 ? -1 : 1), var7);
         return true;
@@ -67,7 +67,7 @@ public class VoltaWheelScreen extends Screen {
         double var6 = var1 - (double)this.width / 2.0;
         double var8 = var3 - (double)this.height / 2.0;
         if (var6 * var6 + var8 * var8 < 676.0) {
-            this.mouseScrolled(var1, var3, -1.0);
+            this.mouseScrolled(var1, var3, 0.0, -1.0);
             return true;
         } else if (this.selected >= 0) {
             this.send();

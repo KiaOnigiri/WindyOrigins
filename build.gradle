@@ -11,16 +11,40 @@ base {
 }
 
 repositories {
-    // Cardinal Components API and PlayerAbilityLib, pulled in by Apoli.
-    maven { url = 'https://maven.ladysnake.org/releases' }
-    maven { url = 'https://maven.jamieswhiteshirt.com/libs-release' }
-    maven { url = 'https://maven.shedaniel.me/' }
-    maven { url = 'https://maven.terraformersmc.com/' }
-    // Origins, Apoli and Calio are published through JitPack.
-    maven { url = 'https://jitpack.io' }
-    maven { url = 'https://api.modrinth.com/maven' }
     mavenCentral()
 }
+
+// Origins for this Minecraft version is not published to a Maven repository, so the released jar itself
+// is used: it is downloaded once into libs/ and the libraries it carries inside (Apoli, Calio, Cardinal
+// Components and the rest) are unpacked next to it. That is exactly the set of classes players run.
+def libsDir = file('libs')
+def originsJar = new File(libsDir, "origins-${project.minecraft_version}.jar")
+if (!originsJar.exists()) {
+    libsDir.mkdirs()
+    def part = new File(libsDir, originsJar.name + '.part')
+    new URL(project.origins_url).withInputStream { input -> part.withOutputStream { it << input } }
+    def sha1 = java.security.MessageDigest.getInstance('SHA-1').digest(part.bytes).encodeHex().toString()
+    if (sha1 != project.origins_sha1) {
+        part.delete()
+        throw new GradleException("Origins download does not match the expected checksum (got ${sha1})")
+    }
+    part.renameTo(originsJar)
+}
+def unpackNested
+unpackNested = { File jar ->
+    def nested = []
+    new java.util.zip.ZipFile(jar).withCloseable { zip ->
+        zip.entries().findAll { it.name.startsWith('META-INF/jars/') && it.name.endsWith('.jar') }.each { entry ->
+            def out = new File(libsDir, entry.name.substring(entry.name.lastIndexOf('/') + 1))
+            if (!out.exists()) {
+                out.withOutputStream { it << zip.getInputStream(entry) }
+                nested << out
+            }
+        }
+    }
+    nested.each { unpackNested(it) }
+}
+unpackNested(originsJar)
 
 loom {
     mixin { defaultRefmapName = 'windyorigins-refmap.json' }
@@ -43,16 +67,13 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Origins brings Apoli, Calio and their own libraries with it; no jars in libs/ are needed.
-    modImplementation "com.github.apace100:origins-fabric:${project.origins_version}"
-    modImplementation "com.github.apace100:apoli:${project.apoli_version}"
-    modImplementation "com.github.apace100:calio:${project.calio_version}"
+    // Origins and everything unpacked from it, see above.
+    modImplementation fileTree(dir: 'libs', include: '*.jar')
 }
 
 processResources {
     inputs.property 'version', project.version
-    // mods.toml is what Forge and NeoForge read: there the mod runs through Sinytra Connector.
-    filesMatching(['fabric.mod.json', 'META-INF/mods.toml']) {
+    filesMatching('fabric.mod.json') {
         expand 'version': project.version
     }
 }

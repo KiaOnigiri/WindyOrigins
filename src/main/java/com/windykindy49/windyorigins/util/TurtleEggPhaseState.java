@@ -36,7 +36,7 @@ public class TurtleEggPhaseState extends PersistentState {
     }
 
     public static TurtleEggPhaseState get(ServerWorld var0) {
-        return var0.getPersistentStateManager().getOrCreate(TurtleEggPhaseState::fromNbt, TurtleEggPhaseState::new, "windyorigins_turtle_eggs");
+        return var0.getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(TurtleEggPhaseState::new, TurtleEggPhaseState::fromNbt, null), "windyorigins_turtle_eggs");
     }
 
     public void setPhase(BlockPos var1, boolean var2) {

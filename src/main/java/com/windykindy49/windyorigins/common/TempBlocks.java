@@ -27,7 +27,7 @@ public class TempBlocks extends PersistentState {
     private final List<TempBlocks.Entry> entries = new ArrayList<>();
 
     public static TempBlocks get(MinecraftServer var0) {
-        return var0.getOverworld().getPersistentStateManager().getOrCreate(TempBlocks::fromNbt, TempBlocks::new, "windyorigins_temp_blocks");
+        return var0.getOverworld().getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(TempBlocks::new, TempBlocks::fromNbt, null), "windyorigins_temp_blocks");
     }
 
     public static TempBlocks fromNbt(NbtCompound var0) {

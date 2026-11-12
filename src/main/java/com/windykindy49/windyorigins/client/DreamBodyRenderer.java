@@ -33,7 +33,7 @@ public class DreamBodyRenderer extends EntityRenderer<DreamBodyEntity> {
             PlayerListEntry var3 = MinecraftClient.getInstance().getNetworkHandler() == null
                 ? null
                 : MinecraftClient.getInstance().getNetworkHandler().getPlayerListEntry(var2);
-            return var3 != null ? var3.getSkinTexture() : DefaultSkinHelper.getTexture(var2);
+            return var3 != null ? var3.getSkinTextures().texture() : DefaultSkinHelper.getSkinTextures(var2).texture();
         }
     }
 

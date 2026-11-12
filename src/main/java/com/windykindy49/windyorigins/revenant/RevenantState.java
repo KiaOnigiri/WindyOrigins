@@ -20,7 +20,7 @@ public class RevenantState extends PersistentState {
     public final Map<UUID, RevenantState.Ghost> ghosts = new HashMap<>();
 
     public static RevenantState get(MinecraftServer var0) {
-        return var0.getOverworld().getPersistentStateManager().getOrCreate(RevenantState::fromNbt, RevenantState::new, "windyorigins_revenants");
+        return var0.getOverworld().getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(RevenantState::new, RevenantState::fromNbt, null), "windyorigins_revenants");
     }
 
     static RevenantState fromNbt(NbtCompound var0) {

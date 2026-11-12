@@ -3,3 +3,5 @@ build/
 run*/
 .idea/
 *.iml
+# Origins and its libraries, downloaded by the build
+libs/

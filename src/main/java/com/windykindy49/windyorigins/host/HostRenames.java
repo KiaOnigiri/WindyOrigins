@@ -27,7 +27,7 @@ public class HostRenames extends PersistentState {
     private final Map<UUID, HostRenames.Entry> entries = new HashMap<>();
 
     public static HostRenames get(MinecraftServer var0) {
-        return var0.getOverworld().getPersistentStateManager().getOrCreate(HostRenames::fromNbt, HostRenames::new, "windyorigins_volta_renames");
+        return var0.getOverworld().getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(HostRenames::new, HostRenames::fromNbt, null), "windyorigins_volta_renames");
     }
 
     public static HostRenames fromNbt(NbtCompound var0) {
