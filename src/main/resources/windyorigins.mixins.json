@@ -95,6 +95,7 @@
     "BeeSoundMixin",
     "BoatSoundMixin",
     "BountyComboClientMixin",
+    "ChipSlotIconMixin",
     "ClientPlayNetworkHandlerMixin",
     "ClientWorldTickMixin",
     "DreamFogMixin",
