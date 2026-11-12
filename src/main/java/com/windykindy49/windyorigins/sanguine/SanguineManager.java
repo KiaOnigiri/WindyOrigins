@@ -502,7 +502,7 @@ public final class SanguineManager {
         public static SanguineManager.BatGrants get(MinecraftServer var0) {
             return var0.getOverworld()
                 .getPersistentStateManager()
-                .getOrCreate(SanguineManager.BatGrants::fromNbt, SanguineManager.BatGrants::new, "windyorigins_bat_grants");
+                .getOrCreate(new net.minecraft.world.PersistentState.Type<>(SanguineManager.BatGrants::new, SanguineManager.BatGrants::fromNbt, null), "windyorigins_bat_grants");
         }
 
         static SanguineManager.BatGrants fromNbt(NbtCompound var0) {

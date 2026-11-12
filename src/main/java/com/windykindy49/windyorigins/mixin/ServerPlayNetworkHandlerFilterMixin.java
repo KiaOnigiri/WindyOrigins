@@ -19,29 +19,26 @@ import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin({ServerPlayNetworkHandler.class})
+@Mixin({net.minecraft.server.network.ServerCommonNetworkHandler.class})
 public class ServerPlayNetworkHandlerFilterMixin {
-    @Shadow
-    public ServerPlayerEntity player;
-
     @Inject(
-        method = {"sendPacket"},
+        method = {"sendPacket", "send"},
         at = {@At("HEAD")},
         cancellable = true
     )
     private void onSendPacket(Packet<?> var1, CallbackInfo var2) {
+        ServerPlayerEntity player = (Object)this instanceof ServerPlayNetworkHandler ? ((ServerPlayNetworkHandler)(Object)this).player : null;
         if (!SoundState.isCrossPhase()) {
-            if (this.player != null) {
-                boolean var3 = ((MirrorEntity)(Object)this.player).windyorigins$isInMirrorWorld();
+            if (player != null) {
+                boolean var3 = ((MirrorEntity)(Object)player).windyorigins$isInMirrorWorld();
                 if (var1 instanceof ItemPickupAnimationS2CPacket var12) {
-                    Entity var13 = this.player.getWorld().getEntityById(var12.getCollectorEntityId());
+                    Entity var13 = player.getWorld().getEntityById(var12.getCollectorEntityId());
                     if (var13 == null) {
-                        var13 = this.player.getWorld().getEntityById(var12.getEntityId());
+                        var13 = player.getWorld().getEntityById(var12.getEntityId());
                     }
 
                     if (var13 != null && ((MirrorEntity)var13).windyorigins$isInMirrorWorld() != var3) {
@@ -49,7 +46,7 @@ public class ServerPlayNetworkHandlerFilterMixin {
                     }
                 } else {
                     if (var1 instanceof EntityStatusS2CPacket) {
-                        Entity var4 = ((EntityStatusS2CPacket)var1).getEntity(this.player.getWorld());
+                        Entity var4 = ((EntityStatusS2CPacket)var1).getEntity(player.getWorld());
                         if (var4 != null) {
                             if (((MirrorEntity)var4).windyorigins$isInMirrorWorld() != var3) {
                                 var2.cancel();
@@ -58,7 +55,7 @@ public class ServerPlayNetworkHandlerFilterMixin {
                             return;
                         }
                     } else if (var1 instanceof PlaySoundFromEntityS2CPacket) {
-                        Entity var10 = this.player.getWorld().getEntityById(((PlaySoundFromEntityS2CPacket)var1).getEntityId());
+                        Entity var10 = player.getWorld().getEntityById(((PlaySoundFromEntityS2CPacket)var1).getEntityId());
                         if (var10 != null) {
                             if (((MirrorEntity)var10).windyorigins$isInMirrorWorld() != var3) {
                                 var2.cancel();

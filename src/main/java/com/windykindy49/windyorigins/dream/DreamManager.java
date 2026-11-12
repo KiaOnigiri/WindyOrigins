@@ -88,7 +88,7 @@ public final class DreamManager {
     private static void noteLoot(Entity mob) {
         int n = lootTaken(mob);
         if (n < MOB_LOOT_LIMIT) {
-            mob.removeScoreboardTag(LOOT_TAG + n);
+            mob.removeCommandTag(LOOT_TAG + n);
             mob.addCommandTag(LOOT_TAG + (n + 1));
         }
     }

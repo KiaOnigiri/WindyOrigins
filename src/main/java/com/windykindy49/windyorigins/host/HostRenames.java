@@ -17,7 +17,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
-import net.minecraft.text.Text.Serializer;
+import net.minecraft.text.Text.Serialization;
 import net.minecraft.world.PersistentState;
 
 public class HostRenames extends PersistentState {
@@ -27,7 +27,7 @@ public class HostRenames extends PersistentState {
     private final Map<UUID, HostRenames.Entry> entries = new HashMap<>();
 
     public static HostRenames get(MinecraftServer var0) {
-        return var0.getOverworld().getPersistentStateManager().getOrCreate(HostRenames::fromNbt, HostRenames::new, "windyorigins_volta_renames");
+        return var0.getOverworld().getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(HostRenames::new, HostRenames::fromNbt, null), "windyorigins_volta_renames");
     }
 
     public static HostRenames fromNbt(NbtCompound var0) {
@@ -105,10 +105,10 @@ public class HostRenames extends PersistentState {
             } else {
                 HostRenames.Entry var11 = new HostRenames.Entry();
                 Text var12 = var2.getCustomName();
-                var11.original = var12 == null ? null : Serializer.toJson(var12);
+                var11.original = var12 == null ? null : Serialization.toJsonString(var12);
                 var11.visible = var2.isCustomNameVisible();
                 MutableText var14 = Text.translatable("name.windyorigins.volta." + var0.getRandom().nextInt(10));
-                var11.joke = Serializer.toJson(var14);
+                var11.joke = Serialization.toJsonString(var14);
                 var11.expires = var0.getServer().getOverworld().getTime() + 600L;
                 var10.entries.put(var2.getUuid(), var11);
                 var10.markDirty();
@@ -153,8 +153,8 @@ public class HostRenames extends PersistentState {
 
     private static void restore(Entity var0, HostRenames.Entry var1) {
         Text var2 = var0.getCustomName();
-        if (var2 != null && var1.joke.equals(Serializer.toJson(var2))) {
-            var0.setCustomName(var1.original == null ? null : Serializer.fromJson(var1.original));
+        if (var2 != null && var1.joke.equals(Serialization.toJsonString(var2))) {
+            var0.setCustomName(var1.original == null ? null : Serialization.fromJson(var1.original));
             var0.setCustomNameVisible(var1.visible);
         }
     }

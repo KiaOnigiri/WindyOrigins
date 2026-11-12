@@ -268,7 +268,7 @@ public final class MirrorManager {
         final Map<UUID, Entry> entries = new HashMap<>();
 
         static Banished get(MinecraftServer server) {
-            return server.getOverworld().getPersistentStateManager().getOrCreate(Banished::read, Banished::new, "windyorigins_banished");
+            return server.getOverworld().getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(Banished::new, Banished::read, null), "windyorigins_banished");
         }
 
         static Banished read(NbtCompound nbt) {

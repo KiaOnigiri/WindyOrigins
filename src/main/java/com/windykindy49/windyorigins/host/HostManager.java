@@ -297,7 +297,7 @@ public final class HostManager {
             if (isHost(var2) && var2.isAlive()) {
                 if (var2.age % 200 == 20) {
                     // Every Host knows how to mend the chip: the recipe is in the book without being found first.
-                    var2.unlockRecipes(new net.minecraft.util.Identifier[]{Powers.id("chip_repair_kit")});
+                    var2.unlockRecipes(java.util.List.of(Powers.id("chip_repair_kit")));
                 }
 
                 HostManager.State var3 = state(var2);

@@ -59,7 +59,7 @@ public class BountyMarkState extends PersistentState {
 
     public static BountyMarkState get(ServerWorld var0) {
         ServerWorld var1 = var0.getServer().getOverworld();
-        return var1.getPersistentStateManager().getOrCreate(BountyMarkState::fromNbt, BountyMarkState::new, "windyorigins_bounty_marks");
+        return var1.getPersistentStateManager().getOrCreate(new net.minecraft.world.PersistentState.Type<>(BountyMarkState::new, BountyMarkState::fromNbt, null), "windyorigins_bounty_marks");
     }
 
     public BountyMarkState.Entry getOrCreate(UUID var1) {

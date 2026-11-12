@@ -33,7 +33,6 @@ import org.joml.Vector3f;
 
 public final class BountyClient {
     private static final Identifier SHEET = new Identifier("windyorigins", "textures/gui/bounty_hunter.png");
-    private static final Identifier ICONS = new Identifier("textures/gui/icons.png");
     private static final Identifier CONTRACT_TIMER = new Identifier("windyorigins", "contract_timer");
     private static final Identifier MARK_RECHARGE = new Identifier("windyorigins", "mark_recharge");
     private static final int PANEL_BG = -1340863990;
@@ -217,18 +216,18 @@ public final class BountyClient {
         int var18 = var17 + 16;
         if (var4 && var6 != null) {
             int var19 = var16 + 5;
-            var0.drawTexture(ICONS, var19, var18, 16, 0, 9, 9);
-            var0.drawTexture(ICONS, var19, var18, 52, 0, 9, 9);
+            var0.drawGuiTexture(new Identifier("hud/heart/container"), var19, var18, 9, 9);
+            var0.drawGuiTexture(new Identifier("hud/heart/full"), var19, var18, 9, 9);
             String var20 = formatHealth(var6.getHealth() + var6.getAbsorptionAmount()) + "/" + formatHealth(var6.getMaxHealth());
             var0.drawTextWithShadow(var3, var20, var19 + 11, var18 + 1, 16733525);
             var19 += 11 + var3.getWidth(var20) + 8;
             int var21 = var5 ? ClientBountyState.getDetailArmor() : var6.getArmor();
-            var0.drawTexture(ICONS, var19, var18, 34, 9, 9, 9);
+            var0.drawGuiTexture(new Identifier("hud/armor_full"), var19, var18, 9, 9);
             var0.drawTextWithShadow(var3, String.valueOf(var21), var19 + 11, var18 + 1, 13619151);
             var19 += 11 + var3.getWidth(String.valueOf(var21)) + 8;
             if (var5) {
-                var0.drawTexture(ICONS, var19, var18, 16, 27, 9, 9);
-                var0.drawTexture(ICONS, var19, var18, 52, 27, 9, 9);
+                var0.drawGuiTexture(new Identifier("hud/food_empty"), var19, var18, 9, 9);
+                var0.drawGuiTexture(new Identifier("hud/food_full"), var19, var18, 9, 9);
                 var0.drawTextWithShadow(var3, String.valueOf(ClientBountyState.getDetailFood()), var19 + 11, var18 + 1, 14721088);
             }
 
