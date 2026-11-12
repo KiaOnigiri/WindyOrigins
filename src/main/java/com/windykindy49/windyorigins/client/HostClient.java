@@ -407,7 +407,7 @@ public final class HostClient {
                 var1 = 0.3F;
             }
 
-            float var2 = var1 * var1 * 1.6F + burst * 3.5F;
+            float var2 = var1 * var1 * 1.6F + burst * 3.5F + VoltaFx.kick(0.0F) * 2.2F;
             if (glitchTicks > 0) {
                 var2 += 0.8F;
             }
@@ -501,8 +501,9 @@ public final class HostClient {
                     double var17 = -Math.sin((double)var12);
                     double var19 = Math.sin((double)var12);
                     double var21 = -Math.cos((double)var12);
-                    float var23 = (float)var55.age + var4;
-                    double var24 = Math.sin((double)var23 * 0.08) * 0.08;
+                    // The hologram is animated on threes: it holds a pose, then jumps to the next.
+                    float var23 = (float)(var55.age / 3 * 3);
+                    double var24 = (double)Math.round(Math.sin((double)var23 * 0.08) * 1.3) / 16.0;
                     double var26 = var11.x + var15 * var13 + var19 * 0.25;
                     double var28 = var11.y + (var10 ? 1.25 : 1.55) + var24;
                     double var30 = var11.z + var17 * var13 + var21 * 0.25;
@@ -562,7 +563,15 @@ public final class HostClient {
                         200
                     );
                     var5.pop();
-                    quad(var45, var46, var47, -var36 / 2.0F, -var37 / 2.0F, var36 / 2.0F, var37 / 2.0F, var39, var41, var40, var42, var44, 255, 255, 255);
+                    // Drawn in strips so that, on a bad frame, some of them tear sideways.
+                    for (int var56 = 0; var56 < 6; var56++) {
+                        float var57 = var32 % 3L == 0L && (var32 + (long)var56 * 7L) % 5L == 0L ? ((var32 + (long)var56) % 2L == 0L ? 0.07F : -0.07F) : 0.0F;
+                        float var58 = -var37 / 2.0F + var37 * (float)var56 / 6.0F;
+                        float var59 = -var37 / 2.0F + var37 * (float)(var56 + 1) / 6.0F;
+                        float var60 = var42 * (1.0F - (float)(var56 + 1) / 6.0F);
+                        float var61 = var42 * (1.0F - (float)var56 / 6.0F);
+                        quad(var45, var46, var47, -var36 / 2.0F + var57, var58, var36 / 2.0F + var57, var59, var39, var60, var40, var61, var44, 255, 255, 255);
+                    }
                     int var50 = (int)(var23 / 2.0F) % 3;
                     float var51 = (float)(var50 * 48) / 256.0F;
                     float var52 = (float)(var50 * 48 + 48) / 256.0F;

@@ -3,10 +3,13 @@ package com.windykindy49.windyorigins.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.windykindy49.windyorigins.host.HostNetworking;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Camera;
@@ -22,21 +25,33 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 /**
- * Volta's energy, drawn the way a cartoon would draw it: flat colour, an ink outline, a streak of
- * highlight, moving on twos. It is painted on the Host's screen only, but it is anchored to the
- * world: a living mass that swells at the edge of the view, reaches out to a block or a creature,
- * grips it and works on it, then lets go.
+ * Volta's energy. Everything here is pixel art drawn live: each frame the shapes are rasterised
+ * onto a coarse grid of fat pixels, given an ink outline, and thrown at the Host's screen with
+ * deliberate damage: torn rows, colour ghosts, dropped lines, afterimages. Nothing eases, nothing
+ * is smooth; poses jump tick to tick. It is seen by the Host alone but is pinned to the world, so a
+ * mass that swells at the edge of the view really does reach the block it is working on.
  */
 public final class VoltaFx {
     private static final int INK = 0x0B1030;
+    private static final int CYAN = 0x45F0E6;
+    private static final int MAGENTA = 0xF03CC8;
+    /** Alpha marker for cells that take no ink outline (speed lines, flecks). */
+    private static final int BARE = 0xFE000000;
+    private static final int SOLID = 0xFF000000;
+    private static final String[] HIT_WORDS = new String[]{"ZAP!", "POW!", "BAM!", "KZZT!"};
+    private static final String[] WORK_WORDS = new String[]{"KRAK", "CHOMP", "NOM", "SNAP", "YOINK"};
     private static final List<Fx> ACTIVE = new ArrayList<>();
-    private static final List<Drop> DROPS = new ArrayList<>();
+    private static final List<Fleck> FLECKS = new ArrayList<>();
+    private static final List<Pellet> PELLETS = new ArrayList<>();
+    private static final List<Word> WORDS = new ArrayList<>();
     private static final Matrix4f PROJECTION = new Matrix4f();
     private static final Matrix4f VIEW = new Matrix4f();
     private static Vec3d cameraPos = Vec3d.ZERO;
@@ -45,9 +60,25 @@ public final class VoltaFx {
     private static int screenH = 270;
     private static float kick;
     private static float prevKick;
-    private static float flash;
-    private static int flashColor;
-    // Immediate-mode batch for the current frame.
+    private static float glitch;
+    private static int impactTicks;
+    private static float impactX;
+    private static float impactY;
+    private static int impactColor;
+    // The pixel canvas.
+    private static int cell = 3;
+    private static int gw;
+    private static int gh;
+    private static int[] grid = new int[0];
+    private static int[] inked = new int[0];
+    private static int[] runs = new int[4096];
+    private static int runCount;
+    private static int[] lastRuns = new int[0];
+    private static int lastRunCount;
+    private static int[] ghostRuns = new int[0];
+    private static int ghostRunCount;
+    private static int ghostCell = 3;
+    private static int lastBeat = -1;
     private static BufferBuilder batch;
     private static Matrix4f batchMatrix;
 
@@ -80,41 +111,81 @@ public final class VoltaFx {
             this.source = source;
             this.color = color;
             this.total = ticks;
-            this.life = kind == HostNetworking.FX_BOLT ? ticks + 10 : ticks;
+            this.life = kind == HostNetworking.FX_BOLT ? ticks + 5 : ticks;
             this.seed = (long)(Math.random() * 100000.0);
         }
 
         int launch() {
-            return Math.max(0, this.total - 3);
+            return Math.max(0, this.total - 2);
         }
     }
 
-    /** A fleck of the mass thrown off by an impact; lives in screen space. */
-    private static final class Drop {
+    /** A loose pixel thrown off by an impact; lives in screen space. */
+    private static final class Fleck {
         float x;
         float y;
         float vx;
         float vy;
-        float radius;
+        int size;
         int life;
         final int color;
 
-        Drop(float x, float y, float vx, float vy, float radius, int life, int color) {
+        Fleck(float x, float y, float vx, float vy, int size, int life, int color) {
             this.x = x;
             this.y = y;
             this.vx = vx;
             this.vy = vy;
-            this.radius = radius;
+            this.size = size;
             this.life = life;
             this.color = color;
         }
     }
 
+    /** A chunk travelling along an arm: block rubble drawn back to the screen, or a load sent out. */
+    private static final class Pellet {
+        final int slot;
+        float along;
+        final float speed;
+        final float side;
+        final int color;
+
+        Pellet(int slot, float along, float speed, float side, int color) {
+            this.slot = slot;
+            this.along = along;
+            this.speed = speed;
+            this.side = side;
+            this.color = color;
+        }
+    }
+
+    /** A comic-book sound effect popping out of an impact. */
+    private static final class Word {
+        final String text;
+        final float x;
+        final float y;
+        final int color;
+        final float turn;
+        int age;
+        final int life;
+
+        Word(String text, float x, float y, int color, float turn, int life) {
+            this.text = text;
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.turn = turn;
+            this.life = life;
+        }
+    }
+
     public static void clear() {
         ACTIVE.clear();
-        DROPS.clear();
+        FLECKS.clear();
+        PELLETS.clear();
+        WORDS.clear();
         kick = 0.0F;
-        flash = 0.0F;
+        glitch = 0.0F;
+        impactTicks = 0;
     }
 
     public static void add(int kind, int slot, int casterId, int entityId, Vec3d pos, Vec3d source, int color, int ticks) {
@@ -126,12 +197,13 @@ public final class VoltaFx {
         if (kind == HostNetworking.FX_STOP) {
             if (slot == 2) {
                 ACTIVE.clear();
+                PELLETS.clear();
             } else {
                 int gone = slot == 1 ? HostNetworking.FX_SELF : HostNetworking.FX_TENDRIL;
-                // Let go rather than vanish: the arm is given a few ticks to pull back.
+
                 for (Fx fx : ACTIVE) {
                     if (fx.kind == gone) {
-                        fx.life = Math.min(fx.life, 4);
+                        fx.life = Math.min(fx.life, 2);
                     }
                 }
             }
@@ -142,14 +214,14 @@ public final class VoltaFx {
         if (kind == HostNetworking.FX_TENDRIL) {
             for (Fx fx : ACTIVE) {
                 if (fx.kind == kind && fx.slot == slot) {
-                    // Same arm, new place to grip: it swings across and lands a blow there.
-                    fx.from = current(fx, client, 1.0F);
+                    // Same arm, new place to grip: it whips across and hits.
+                    fx.from = current(fx, client);
                     fx.pos = pos;
                     fx.entityId = entityId;
                     fx.life = ticks;
                     fx.total = ticks;
-                    fx.age = Math.min(fx.age, 4) + 100;
-                    fx.punch = -3;
+                    fx.age = Math.min(fx.age, 2) + 100;
+                    fx.punch = -2;
                     return;
                 }
             }
@@ -161,13 +233,16 @@ public final class VoltaFx {
 
         Fx fx = new Fx(kind, slot, casterId, entityId, pos, source, color, ticks);
         if (kind == HostNetworking.FX_TENDRIL) {
-            fx.punch = -4;
+            fx.punch = -2;
         }
 
         ACTIVE.add(fx);
-        if (kind == HostNetworking.FX_SELF || kind == HostNetworking.FX_PULSE) {
-            flash = Math.max(flash, 0.3F);
-            flashColor = color;
+        if (kind == HostNetworking.FX_PULSE && slot == 0) {
+            glitch = Math.max(glitch, 0.8F);
+            kick = Math.max(kick, 0.5F);
+            word("VWOOM", (float)screenW * 0.5F, (float)screenH * 0.78F, color, 8);
+        } else if (kind == HostNetworking.FX_SELF) {
+            glitch = Math.max(glitch, 0.6F);
         }
     }
 
@@ -178,7 +253,7 @@ public final class VoltaFx {
     /** Whether a full cast (face first, then the shot) is playing for the local Host. */
     public static boolean castingFace() {
         for (Fx fx : ACTIVE) {
-            if (fx.kind == HostNetworking.FX_BOLT && fx.slot == 0 && fx.age < fx.total + 4) {
+            if (fx.kind == HostNetworking.FX_BOLT && fx.slot == 0 && fx.age <= fx.total + 1) {
                 return true;
             }
         }
@@ -199,36 +274,42 @@ public final class VoltaFx {
 
         for (int i = 0; i < count; i++) {
             double angle = Math.random() * Math.PI * 2.0;
-            float speed = (float)(2.0 + Math.random() * 5.0) * force * sc;
-            DROPS.add(
-                new Drop(x, y, (float)Math.cos(angle) * speed, (float)Math.sin(angle) * speed - 2.0F * sc, (float)(2.0 + Math.random() * 3.5) * sc, 8 + (int)(Math.random() * 8.0), color)
+            float speed = (float)(3.0 + Math.random() * 9.0) * force * sc;
+            int tint = Math.random() < 0.25 ? 0xFFFFFF : (Math.random() < 0.2 ? MAGENTA : color);
+            FLECKS.add(
+                new Fleck(x, y, (float)Math.cos(angle) * speed, (float)Math.sin(angle) * speed - 3.0F * sc, Math.random() < 0.3 ? 2 : 1, 4 + (int)(Math.random() * 7.0), tint)
             );
         }
     }
 
+    private static void word(String text, float x, float y, int color, int life) {
+        WORDS.add(new Word(text, x, y, color, (float)(Math.random() * 30.0 - 15.0), life));
+    }
+
     public static void tick(MinecraftClient client) {
         prevKick = kick;
-        kick *= 0.72F;
-        flash *= 0.7F;
+        kick *= 0.6F;
+        glitch *= 0.72F;
+        if (impactTicks > 0) {
+            impactTicks--;
+        }
+
         if (client.world == null) {
-            ACTIVE.clear();
-            DROPS.clear();
+            clear();
             return;
         }
 
-        Iterator<Drop> drops = DROPS.iterator();
-
-        while (drops.hasNext()) {
-            Drop drop = drops.next();
-            drop.x += drop.vx;
-            drop.y += drop.vy;
-            drop.vy += 0.9F * scale();
-            drop.vx *= 0.92F;
-            if (--drop.life <= 0) {
-                drops.remove();
-            }
-        }
-
+        FLECKS.removeIf(fleck -> {
+            fleck.x += fleck.vx;
+            fleck.y += fleck.vy;
+            fleck.vy += 1.6F * scale();
+            return --fleck.life <= 0;
+        });
+        PELLETS.removeIf(pellet -> {
+            pellet.along += pellet.speed;
+            return pellet.along < 0.0F || pellet.along > 1.0F;
+        });
+        WORDS.removeIf(word -> ++word.age > word.life);
         Iterator<Fx> it = ACTIVE.iterator();
 
         while (it.hasNext()) {
@@ -237,34 +318,72 @@ public final class VoltaFx {
             fx.life--;
             fx.punch++;
             if (fx.kind == HostNetworking.FX_BOLT) {
-                if (fx.age == fx.launch() + 1) {
-                    kick = fx.slot == 0 ? 1.0F : 0.35F;
-                    if (fx.slot == 0) {
-                        flash = 0.5F;
-                        flashColor = 0xFFFFFF;
-                        play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_1, 0.5F, 1.9F);
-                        play(client, SoundEvents.ENTITY_SLIME_ATTACK, 0.7F, 0.7F);
-                    }
+                if (fx.age == fx.launch()) {
+                    kick = 1.0F;
+                    glitch = 1.0F;
+                    play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_3, 0.5F, 2.0F);
+                    play(client, SoundEvents.ENTITY_FIREWORK_ROCKET_BLAST, 0.5F, 1.9F);
                 }
 
                 if (!fx.landed && fx.age >= fx.total) {
                     fx.landed = true;
-                    float[] at = project(current(fx, client, 1.0F));
-                    splash(at[0], at[1], 12, fx.color, 1.3F);
-                    play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.6F, 1.5F);
+                    float[] at = project(current(fx, client));
+                    impactTicks = 3;
+                    impactX = at[0];
+                    impactY = at[1];
+                    impactColor = fx.color;
+                    kick = 1.0F;
+                    glitch = 1.0F;
+                    splash(at[0], at[1], fx.slot == 0 ? 26 : 12, fx.color, 1.5F);
+                    if (fx.slot == 0) {
+                        word(HIT_WORDS[(int)(Math.random() * (double)HIT_WORDS.length)], at[0], at[1] - 34.0F * scale(), 0xFFFFFF, 9);
+                    }
+
+                    play(client, SoundEvents.ENTITY_GENERIC_EXPLODE, 0.25F, 2.0F);
+                    play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.6F, 1.6F);
                 }
             } else if (fx.kind == HostNetworking.FX_TENDRIL) {
-                kick = Math.max(kick, 0.1F);
+                boolean drain = fx.slot == HostNetworking.SLOT_DRAIN;
+                if (drain && fx.age % 2 == 0) {
+                    PELLETS.add(new Pellet(fx.slot, 1.0F, -0.17F, (float)(Math.random() - 0.5), Math.random() < 0.5 ? 0xFF3050 : 0xFFFFFF));
+                }
+
                 if (fx.punch == 0) {
-                    // The grip lands.
-                    float[] at = project(current(fx, client, 1.0F));
-                    splash(at[0], at[1], 6, fx.color, 0.9F);
-                    kick = Math.max(kick, 0.3F);
-                    play(client, SoundEvents.ENTITY_SLIME_SQUISH_SMALL, 0.5F, 1.2F + (float)Math.random() * 0.5F);
+                    // The grip lands: rubble in the block's own colour is hauled back up the arm.
+                    Vec3d target = current(fx, client);
+                    float[] at = project(target);
+                    BlockPos block = BlockPos.ofFloored(target);
+                    BlockState state = client.world.getBlockState(block);
+                    boolean empty = state.isAir();
+                    int rubble = empty ? fx.color : state.getMapColor(client.world, block).color;
+                    if (rubble == 0) {
+                        rubble = 0x9A9A9A;
+                    }
+
+                    if (!drain) {
+                        for (int i = 0; i < 5; i++) {
+                            PELLETS.add(
+                                new Pellet(fx.slot, empty ? 0.0F : 1.0F, (empty ? 1.0F : -1.0F) * (0.2F + (float)Math.random() * 0.14F), (float)(Math.random() - 0.5), i % 2 == 0 ? rubble : mix(rubble, INK, 0.3F))
+                            );
+                        }
+                    }
+
+                    splash(at[0], at[1], 9, rubble, 1.0F);
+                    kick = Math.max(kick, 0.55F);
+                    glitch = Math.max(glitch, 0.7F);
+                    if (Math.random() < 0.34) {
+                        word(WORK_WORDS[(int)(Math.random() * (double)WORK_WORDS.length)], at[0], at[1] - 22.0F * scale(), 0xFFFFFF, 6);
+                    }
+
+                    play(client, SoundEvents.ENTITY_SLIME_SQUISH_SMALL, 0.5F, 1.3F + (float)Math.random() * 0.6F);
                 }
             } else if (fx.kind == HostNetworking.FX_ARC && fx.age == 1) {
                 float[] at = project(fx.pos);
-                splash(at[0], at[1], 4, fx.color, 0.8F);
+                splash(at[0], at[1], 7, fx.color, 1.0F);
+                glitch = Math.max(glitch, 0.6F);
+                if (Math.random() < 0.4) {
+                    word("BZZT", at[0], at[1] - 18.0F * scale(), 0xFFFFFF, 5);
+                }
             }
 
             if (fx.life <= 0) {
@@ -274,19 +393,19 @@ public final class VoltaFx {
     }
 
     /** Where the effect currently points: it follows its target entity while that still exists. */
-    private static Vec3d current(Fx fx, MinecraftClient client, float tickDelta) {
+    private static Vec3d current(Fx fx, MinecraftClient client) {
         Vec3d target = fx.pos;
         if (fx.entityId >= 0 && client.world != null) {
             Entity entity = client.world.getEntityById(fx.entityId);
             if (entity != null && entity.isAlive()) {
-                target = entity.getLerpedPos(tickDelta).add(0.0, (double)entity.getHeight() * 0.6, 0.0);
+                target = entity.getPos().add(0.0, (double)entity.getHeight() * 0.6, 0.0);
                 fx.pos = target;
             }
         }
 
-        // A retargeted arm swings across over four ticks instead of jumping.
-        if (fx.kind == HostNetworking.FX_TENDRIL && fx.age >= 100 && fx.age < 104) {
-            return fx.from.lerp(target, (double)MathHelper.clamp(((float)(fx.age - 100) + tickDelta) / 4.0F, 0.0F, 1.0F));
+        // A retargeted arm takes two ticks to whip across; no easing.
+        if (fx.kind == HostNetworking.FX_TENDRIL && fx.age >= 100 && fx.age < 102) {
+            return fx.from.lerp(target, 0.5 * (double)(fx.age - 99));
         }
 
         return target;
@@ -299,6 +418,7 @@ public final class VoltaFx {
         h ^= h >>> 32;
         return (double)(h & 0xFFFFFFL) / (double)0xFFFFFF - 0.5;
     }
+
     private static float scale() {
         return Math.max(0.75F, (float)screenH / 360.0F);
     }
@@ -317,7 +437,7 @@ public final class VoltaFx {
 
         for (Fx fx : ACTIVE) {
             if (fx.kind == HostNetworking.FX_DECOY) {
-                hologram(context.matrixStack(), context.consumers(), context.camera(), fx, (float)fx.age + context.tickDelta());
+                hologram(context.matrixStack(), context.consumers(), context.camera(), fx);
             }
         }
     }
@@ -328,7 +448,6 @@ public final class VoltaFx {
         v.mul(VIEW);
         v.mul(PROJECTION);
         if (v.w <= 0.05F) {
-            // Behind the view: aim far off the edge of the screen on the side it lies.
             float len = Math.max(0.001F, (float)Math.sqrt((double)(v.x * v.x + v.y * v.y)));
             return new float[]{(float)screenW * 0.5F + v.x / len * (float)screenW * 1.5F, (float)screenH * 0.5F - v.y / len * (float)screenH * 1.5F, 0.0F};
         }
@@ -336,50 +455,60 @@ public final class VoltaFx {
         return new float[]{(v.x / v.w * 0.5F + 0.5F) * (float)screenW, (1.0F - (v.y / v.w * 0.5F + 0.5F)) * (float)screenH, 1.0F};
     }
 
-    private static void hologram(MatrixStack matrices, VertexConsumerProvider consumers, Camera camera, Fx fx, float age) {
+    /** The decoy: Volta's sprite standing in the world, flickering and slipping like a bad signal. */
+    private static void hologram(MatrixStack matrices, VertexConsumerProvider consumers, Camera camera, Fx fx) {
         Vec3d cam = camera.getPos();
-        float appear = MathHelper.clamp(age / 6.0F, 0.0F, 1.0F);
-        float vanish = MathHelper.clamp((float)fx.life / 8.0F, 0.0F, 1.0F);
-        float flicker = hash(fx.seed, (int)(age / 2.0F), 0) > 0.38 ? 0.45F : 1.0F;
-        int alpha = (int)(230.0F * appear * vanish * flicker);
+        int step = fx.age / 2;
+        if (hash(fx.seed, step, 0) > 0.36 || fx.age < 2 && fx.age % 2 == 1) {
+            return;
+        }
+
         float width = 0.95F;
-        float height = 1.42F * (0.3F + 0.7F * appear);
+        float height = 1.42F;
+        int alpha = fx.life < 6 && fx.life % 2 == 0 ? 90 : 235;
         matrices.push();
-        matrices.translate(fx.pos.x - cam.x, fx.pos.y + (double)height / 2.0 + 0.05 + Math.sin((double)age * 0.1) * 0.05 - cam.y, fx.pos.z - cam.z);
+        matrices.translate(fx.pos.x - cam.x, fx.pos.y + (double)height / 2.0 + 0.05 + (double)(step % 4 == 0 ? 0.0625F : 0.0F) - cam.y, fx.pos.z - cam.z);
         matrices.multiply(new org.joml.Quaternionf().rotationY((float)Math.toRadians((double)(180.0F - camera.getYaw()))));
-        int frame = 2 + (int)(age / 8.0F) % 2;
+        int frame = 2 + fx.age / 6 % 2;
         float u0 = (float)(frame * 32) / 256.0F;
         float u1 = (float)((frame + 1) * 32) / 256.0F;
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getEntityTranslucentEmissive(HostClient.SHEET));
-        HostClient.quad(
-            buffer, matrices.peek().getPositionMatrix(), matrices.peek().getNormalMatrix(), -width / 2.0F, -height / 2.0F, width / 2.0F, height / 2.0F, u0, 0.0F, u1, 0.1875F, alpha, 190, 255, 250
-        );
+        int strips = 6;
+
+        for (int i = 0; i < strips; i++) {
+            // Now and then a strip of her tears sideways.
+            float slip = hash(fx.seed, step, 10 + i) > 0.3 ? (float)hash(fx.seed, step, 20 + i) * 0.3F : 0.0F;
+            float y0 = -height / 2.0F + height * (float)i / (float)strips;
+            float y1 = -height / 2.0F + height * (float)(i + 1) / (float)strips;
+            float v1 = 0.1875F * (1.0F - (float)i / (float)strips);
+            float v0 = 0.1875F * (1.0F - (float)(i + 1) / (float)strips);
+            HostClient.quad(
+                buffer, matrices.peek().getPositionMatrix(), matrices.peek().getNormalMatrix(), -width / 2.0F + slip, y0, width / 2.0F + slip, y1, u0, v0, u1, v1, alpha, 190, 255, 250
+            );
+        }
+
         matrices.pop();
     }
 
-    // ------------------------------------------------------------------ ink and paint
+    // ------------------------------------------------------------------ the pixel canvas
 
-    private static void begin(DrawContext context) {
-        context.draw();
-        batchMatrix = context.getMatrices().peek().getPositionMatrix();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableCull();
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        batch = Tessellator.getInstance().getBuffer();
-        batch.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+    private static void canvas(int width, int height) {
+        cell = Math.max(2, Math.round((float)height / 110.0F));
+        gw = width / cell + 2;
+        gh = height / cell + 2;
+        int need = gw * gh;
+        if (grid.length < need) {
+            grid = new int[need];
+            inked = new int[need];
+        } else {
+            Arrays.fill(grid, 0, need, 0);
+        }
     }
 
-    private static void end() {
-        Tessellator.getInstance().draw();
-        RenderSystem.enableCull();
-        RenderSystem.enableDepthTest();
-        batch = null;
-    }
-
-    private static int argb(int rgb, float alpha) {
-        return rgb & 0xFFFFFF | (int)(MathHelper.clamp(alpha, 0.0F, 1.0F) * 255.0F) << 24;
+    private static void put(int x, int y, int color) {
+        if (x >= 0 && y >= 0 && x < gw && y < gh) {
+            grid[y * gw + x] = color;
+        }
     }
 
     private static int mix(int a, int b, float t) {
@@ -389,171 +518,264 @@ public final class VoltaFx {
         return r << 16 | g << 8 | bl;
     }
 
-    private static void tri(float x1, float y1, float x2, float y2, float x3, float y3, int color) {
-        int a = color >>> 24;
-        int r = color >> 16 & 0xFF;
-        int g = color >> 8 & 0xFF;
-        int b = color & 0xFF;
+    /** Cel shading: a band of shadow low on the right, a streak of light high on the left. */
+    private static int shaded(int rgb, float ux, float uy, float radius) {
+        if (radius < 1.6F) {
+            return SOLID | rgb;
+        }
+
+        float across = ux * 0.55F + uy * 0.83F;
+        if (across > 0.36F) {
+            return SOLID | mix(rgb, INK, 0.34F);
+        }
+
+        float along = ux * 0.83F - uy * 0.55F;
+        return across < -0.42F && across > -0.84F && Math.abs(along) < 0.6F ? SOLID | mix(rgb, 0xFFFFFF, 0.78F) : SOLID | rgb;
+    }
+
+    /** A shaded lump of the mass. Coordinates are screen pixels. */
+    private static void blob(float x, float y, float radius, int rgb) {
+        limb(x, y, radius, x, y, radius, rgb);
+    }
+
+    /** A shaded, tapering limb between two lumps. */
+    private static void limb(float x1, float y1, float r1, float x2, float y2, float r2, int rgb) {
+        raster(x1, y1, r1, x2, y2, r2, rgb, true);
+    }
+
+    /** A flat-coloured stroke; pass {@link #BARE} in the colour's alpha to leave it without ink. */
+    private static void stroke(float x1, float y1, float x2, float y2, float radius, int argb) {
+        raster(x1, y1, radius, x2, y2, radius, argb, false);
+    }
+
+    private static void raster(float x1, float y1, float r1, float x2, float y2, float r2, int color, boolean shade) {
+        float c = (float)cell;
+        float ax = x1 / c;
+        float ay = y1 / c;
+        float bx = x2 / c;
+        float by = y2 / c;
+        float ra = Math.max(0.55F, r1 / c);
+        float rb = Math.max(0.55F, r2 / c);
+        float reach = Math.max(ra, rb);
+        int minX = Math.max(0, MathHelper.floor(Math.min(ax, bx) - reach));
+        int maxX = Math.min(gw - 1, MathHelper.ceil(Math.max(ax, bx) + reach));
+        int minY = Math.max(0, MathHelper.floor(Math.min(ay, by) - reach));
+        int maxY = Math.min(gh - 1, MathHelper.ceil(Math.max(ay, by) + reach));
+        float dx = bx - ax;
+        float dy = by - ay;
+        float len2 = dx * dx + dy * dy;
+
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                float px = (float)x + 0.5F - ax;
+                float py = (float)y + 0.5F - ay;
+                float t = len2 < 1.0E-4F ? 0.0F : MathHelper.clamp((px * dx + py * dy) / len2, 0.0F, 1.0F);
+                float ox = px - dx * t;
+                float oy = py - dy * t;
+                float r = ra + (rb - ra) * t;
+                if (ox * ox + oy * oy <= r * r) {
+                    grid[y * gw + x] = shade ? shaded(color & 0xFFFFFF, ox / r, oy / r, r) : color;
+                }
+            }
+        }
+    }
+
+    private static void box(float x0, float y0, float x1, float y1, int argb) {
+        int minX = Math.max(0, MathHelper.floor(x0 / (float)cell));
+        int maxX = Math.min(gw - 1, MathHelper.floor(x1 / (float)cell));
+        int minY = Math.max(0, MathHelper.floor(y0 / (float)cell));
+        int maxY = Math.min(gh - 1, MathHelper.floor(y1 / (float)cell));
+
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                grid[y * gw + x] = argb;
+            }
+        }
+    }
+
+    /** A spiked star: the shape of a comic-book hit. */
+    private static void spike(float x, float y, float outer, float inner, int points, float turn, int argb) {
+        float c = (float)cell;
+        float cx = x / c;
+        float cy = y / c;
+        float ro = outer / c;
+        float ri = inner / c;
+        int minX = Math.max(0, MathHelper.floor(cx - ro));
+        int maxX = Math.min(gw - 1, MathHelper.ceil(cx + ro));
+        int minY = Math.max(0, MathHelper.floor(cy - ro));
+        int maxY = Math.min(gh - 1, MathHelper.ceil(cy + ro));
+        double wedge = Math.PI * 2.0 / (double)points;
+
+        for (int py = minY; py <= maxY; py++) {
+            for (int px = minX; px <= maxX; px++) {
+                float dx = (float)px + 0.5F - cx;
+                float dy = (float)py + 0.5F - cy;
+                double a = (Math.atan2((double)dy, (double)dx) - (double)turn) / wedge;
+                float tip = 1.0F - Math.abs((float)(a - Math.floor(a)) * 2.0F - 1.0F);
+                float r = ri + (ro - ri) * tip * tip;
+                if (dx * dx + dy * dy <= r * r) {
+                    grid[py * gw + px] = argb;
+                }
+            }
+        }
+    }
+
+    /** A ring squashed to lie on the ground; on this grid it comes out in steps. */
+    private static void hoop(float x, float y, float radius, float squash, float thickness, int argb) {
+        float c = (float)cell;
+        float cx = x / c;
+        float cy = y / c;
+        float r = radius / c;
+        float th = Math.max(1.0F, thickness / c);
+        int minX = Math.max(0, MathHelper.floor(cx - r));
+        int maxX = Math.min(gw - 1, MathHelper.ceil(cx + r));
+        int minY = Math.max(0, MathHelper.floor(cy - r * squash));
+        int maxY = Math.min(gh - 1, MathHelper.ceil(cy + r * squash));
+
+        for (int py = minY; py <= maxY; py++) {
+            for (int px = minX; px <= maxX; px++) {
+                float dx = (float)px + 0.5F - cx;
+                float dy = ((float)py + 0.5F - cy) / squash;
+                float d = (float)Math.sqrt((double)(dx * dx + dy * dy));
+                if (d <= r && d >= r - th) {
+                    grid[py * gw + px] = argb;
+                }
+            }
+        }
+    }
+
+    private static void quad(float x0, float y0, float x1, float y1, int argb) {
+        int a = argb >>> 24;
+        int r = argb >> 16 & 0xFF;
+        int g = argb >> 8 & 0xFF;
+        int b = argb & 0xFF;
+        batch.vertex(batchMatrix, x0, y0, 0.0F).color(r, g, b, a).next();
+        batch.vertex(batchMatrix, x0, y1, 0.0F).color(r, g, b, a).next();
         batch.vertex(batchMatrix, x1, y1, 0.0F).color(r, g, b, a).next();
-        batch.vertex(batchMatrix, x2, y2, 0.0F).color(r, g, b, a).next();
-        batch.vertex(batchMatrix, x3, y3, 0.0F).color(r, g, b, a).next();
+        batch.vertex(batchMatrix, x0, y0, 0.0F).color(r, g, b, a).next();
+        batch.vertex(batchMatrix, x1, y1, 0.0F).color(r, g, b, a).next();
+        batch.vertex(batchMatrix, x1, y0, 0.0F).color(r, g, b, a).next();
     }
 
-    private static void disc(float x, float y, float radius, int color) {
-        ellipse(x, y, radius, radius, color);
-    }
+    private static void drawRuns(int[] list, int count, int size, int shiftCells, int tint, int alpha) {
+        float c = (float)size;
 
-    private static void ellipse(float x, float y, float rx, float ry, int color) {
-        if (rx <= 0.2F || ry <= 0.2F) {
-            return;
-        }
-
-        int steps = MathHelper.clamp(8 + (int)(Math.max(rx, ry) * 0.6F), 8, 28);
-        float px = x + rx;
-        float py = y;
-
-        for (int i = 1; i <= steps; i++) {
-            double a = (double)i / (double)steps * Math.PI * 2.0;
-            float nx = x + (float)Math.cos(a) * rx;
-            float ny = y + (float)Math.sin(a) * ry;
-            tri(x, y, px, py, nx, ny, color);
-            px = nx;
-            py = ny;
+        for (int i = 0; i < count; i += 4) {
+            int color = tint != 0 ? tint & 0xFFFFFF | alpha << 24 : list[i + 3] & 0xFFFFFF | alpha << 24;
+            quad((float)(list[i + 1] + shiftCells) * c, (float)list[i] * c, (float)(list[i + 2] + shiftCells) * c, (float)(list[i] + 1) * c, color);
         }
     }
 
-    /** The straight-sided body between two discs of a stroke. */
-    private static void limb(float x1, float y1, float r1, float x2, float y2, float r2, int color) {
-        float dx = x2 - x1;
-        float dy = y2 - y1;
-        float len = (float)Math.sqrt((double)(dx * dx + dy * dy));
-        if (len < 0.01F) {
-            return;
-        }
+    /** Inks the canvas, breaks it up a little, and puts it on the screen. */
+    private static void flush(DrawContext context, int beat, int tickAge) {
+        int need = gw * gh;
+        // Ink: every empty cell that touches paint becomes outline.
+        System.arraycopy(grid, 0, inked, 0, need);
 
-        float nx = -dy / len;
-        float ny = dx / len;
-        tri(x1 + nx * r1, y1 + ny * r1, x1 - nx * r1, y1 - ny * r1, x2 + nx * r2, y2 + ny * r2, color);
-        tri(x1 - nx * r1, y1 - ny * r1, x2 - nx * r2, y2 - ny * r2, x2 + nx * r2, y2 + ny * r2, color);
-    }
-
-    /**
-     * A body of the mass: a run of joined blobs (the first {@code chain} of them form one stroke,
-     * the rest are loose lumps stuck to it), inked, filled, shaded and given its streak of light.
-     */
-    private static void mass(float[] xs, float[] ys, float[] rs, int count, int chain, int rgb, float alpha) {
-        float sc = scale();
-        float line = 2.2F * sc;
-        int ink = argb(INK, alpha);
-        int fill = argb(rgb, alpha);
-        int shade = argb(mix(rgb, INK, 0.3F), alpha);
-        int light = argb(mix(rgb, 0xFFFFFF, 0.72F), alpha);
-
-        for (int pass = 0; pass < 4; pass++) {
-            for (int i = 0; i < count; i++) {
-                float r = rs[i];
-                if (r <= 0.3F) {
+        for (int y = 0; y < gh; y++) {
+            for (int x = 0; x < gw; x++) {
+                int i = y * gw + x;
+                if (grid[i] != 0) {
                     continue;
                 }
 
-                float ox = 0.0F;
-                float oy = 0.0F;
-                float pr = r;
-                int color = fill;
-                if (pass == 0) {
-                    pr = r + line;
-                    color = ink;
-                } else if (pass == 2) {
-                    // Shadow hugging the lower right.
-                    ox = r * 0.2F;
-                    oy = r * 0.24F;
-                    pr = r * 0.74F;
-                    color = shade;
-                } else if (pass == 3) {
-                    // A streak of light along the upper left.
-                    if (r < 3.5F * sc) {
-                        continue;
+                if (x > 0 && grid[i - 1] >>> 24 == 0xFF
+                    || x < gw - 1 && grid[i + 1] >>> 24 == 0xFF
+                    || y > 0 && grid[i - gw] >>> 24 == 0xFF
+                    || y < gh - 1 && grid[i + gw] >>> 24 == 0xFF) {
+                    inked[i] = SOLID | INK;
+                }
+            }
+        }
+
+        float g = MathHelper.clamp(0.22F + glitch, 0.0F, 1.0F);
+        runCount = 0;
+
+        for (int y = 0; y < gh; y++) {
+            // Dropped lines and rows knocked sideways: the signal is never clean.
+            if (hash(977L, y, tickAge) + 0.5 < 0.015 + 0.07 * (double)g) {
+                continue;
+            }
+
+            int band = y / 5;
+            int shift = hash(31L, band, beat) + 0.5 < 0.05 + 0.3 * (double)g ? (int)(hash(57L, band, beat) * (double)(4.0F + 22.0F * g)) : 0;
+            int start = -1;
+            int color = 0;
+
+            for (int x = 0; x <= gw; x++) {
+                int now = x < gw ? inked[y * gw + x] : 0;
+                if (now != color) {
+                    if (color != 0) {
+                        if (runCount + 4 > runs.length) {
+                            runs = Arrays.copyOf(runs, runs.length * 2);
+                        }
+
+                        runs[runCount++] = y;
+                        runs[runCount++] = start + shift;
+                        runs[runCount++] = x + shift;
+                        runs[runCount++] = color;
                     }
 
-                    ox = -r * 0.36F;
-                    oy = -r * 0.4F;
-                    pr = r * 0.24F;
-                    color = light;
-                }
-
-                if (pass == 2) {
-                    // Paint the shadow, then lay the body colour back over most of it.
-                    disc(xs[i] + ox, ys[i] + oy, pr, color);
-                    disc(xs[i] - r * 0.08F, ys[i] - r * 0.1F, r * 0.8F, fill);
-                } else {
-                    disc(xs[i] + ox, ys[i] + oy, pr, color);
-                }
-
-                if (i + 1 < chain && rs[i + 1] > 0.3F) {
-                    float r2 = rs[i + 1];
-                    if (pass == 0) {
-                        limb(xs[i], ys[i], r + line, xs[i + 1], ys[i + 1], r2 + line, color);
-                    } else if (pass == 1) {
-                        limb(xs[i], ys[i], r, xs[i + 1], ys[i + 1], r2, color);
-                    } else if (pass == 3 && r2 >= 3.5F * sc) {
-                        limb(xs[i] + ox, ys[i] + oy, pr, xs[i + 1] - r2 * 0.36F, ys[i + 1] - r2 * 0.4F, r2 * 0.24F, color);
-                    }
+                    start = x;
+                    color = now;
                 }
             }
         }
-    }
 
-    /** A cartoon impact: a spiked star, inked. */
-    private static void burst(float x, float y, float outer, float inner, int points, float turn, int rgb, float alpha) {
-        float line = 2.2F * scale();
-
-        for (int pass = 0; pass < 2; pass++) {
-            float ro = outer + (pass == 0 ? line * 1.6F : 0.0F);
-            float ri = inner + (pass == 0 ? line : 0.0F);
-            int color = pass == 0 ? argb(INK, alpha) : argb(rgb, alpha);
-            float px = 0.0F;
-            float py = 0.0F;
-
-            for (int i = 0; i <= points * 2; i++) {
-                double a = (double)turn + (double)i / (double)(points * 2) * Math.PI * 2.0;
-                float r = i % 2 == 0 ? ro : ri;
-                float nx = x + (float)Math.cos(a) * r;
-                float ny = y + (float)Math.sin(a) * r;
-                if (i > 0) {
-                    tri(x, y, px, py, nx, ny, color);
-                }
-
-                px = nx;
-                py = ny;
+        if (beat != lastBeat) {
+            // The pose of the previous beat lingers as an afterimage.
+            if (ghostRuns.length < lastRunCount) {
+                ghostRuns = new int[lastRuns.length];
             }
+
+            System.arraycopy(lastRuns, 0, ghostRuns, 0, lastRunCount);
+            ghostRunCount = lastRunCount;
+            ghostCell = cell;
+            lastBeat = beat;
         }
-    }
 
-    /** An inked ring, squashed to lie like a wave on the ground. */
-    private static void wave(float x, float y, float radius, float squash, float thickness, int rgb, float alpha) {
-        float line = 2.0F * scale();
-        int steps = 44;
-
-        for (int pass = 0; pass < 3; pass++) {
-            float outer = radius + (pass == 0 ? line : (pass == 2 ? -thickness * 0.55F : 0.0F));
-            float inner = Math.max(0.0F, radius - thickness - (pass == 0 ? line : (pass == 2 ? -thickness * 0.2F : 0.0F)));
-            if (pass == 2) {
-                inner = Math.max(0.0F, radius - thickness * 0.8F);
-            }
-
-            int color = pass == 0 ? argb(INK, alpha) : (pass == 1 ? argb(rgb, alpha) : argb(mix(rgb, 0xFFFFFF, 0.7F), alpha));
-
-            for (int i = 0; i < steps; i++) {
-                double a0 = (double)i / (double)steps * Math.PI * 2.0;
-                double a1 = (double)(i + 1) / (double)steps * Math.PI * 2.0;
-                float c0 = (float)Math.cos(a0);
-                float s0 = (float)Math.sin(a0) * squash;
-                float c1 = (float)Math.cos(a1);
-                float s1 = (float)Math.sin(a1) * squash;
-                tri(x + c0 * outer, y + s0 * outer, x + c0 * inner, y + s0 * inner, x + c1 * outer, y + s1 * outer, color);
-                tri(x + c0 * inner, y + s0 * inner, x + c1 * inner, y + s1 * inner, x + c1 * outer, y + s1 * outer, color);
-            }
+        if (runCount == 0 && ghostRunCount == 0) {
+            lastRunCount = 0;
+            return;
         }
+
+        context.draw();
+        batchMatrix = context.getMatrices().peek().getPositionMatrix();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest();
+        RenderSystem.disableCull();
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        batch = Tessellator.getInstance().getBuffer();
+        batch.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        drawRuns(ghostRuns, ghostRunCount, ghostCell, 0, 0, 70);
+        // Colour ghosts either side, wider when the picture is being hit.
+        int split = 1 + (int)(g * 3.0F);
+        drawRuns(runs, runCount, cell, -split, MAGENTA, 120);
+        drawRuns(runs, runCount, cell, split, CYAN, 120);
+        drawRuns(runs, runCount, cell, 0, 0, 255);
+        // A few dead blocks of colour stuck to the picture.
+        int junk = (int)(g * 7.0F);
+
+        for (int i = 0; i < junk && runCount > 0; i++) {
+            int at = (int)((hash(91L, i, tickAge) + 0.5) * (double)(runCount / 4)) * 4;
+            float x = (float)(runs[at + 1] * cell) + (float)hash(13L, i, tickAge) * 60.0F;
+            float y = (float)(runs[at] * cell);
+            float w = (float)(cell * (2 + (int)((hash(17L, i, tickAge) + 0.5) * 9.0)));
+            int tint = i % 3 == 0 ? 0xFFFFFF : (i % 3 == 1 ? MAGENTA : CYAN);
+            quad(x, y, x + w, y + (float)(cell * (1 + i % 2)), tint | 200 << 24);
+        }
+
+        Tessellator.getInstance().draw();
+        RenderSystem.enableCull();
+        RenderSystem.enableDepthTest();
+        batch = null;
+        if (lastRuns.length < runCount) {
+            lastRuns = new int[runs.length];
+        }
+
+        System.arraycopy(runs, 0, lastRuns, 0, runCount);
+        lastRunCount = runCount;
     }
 
     // ------------------------------------------------------------------ screen
@@ -562,363 +784,453 @@ public final class VoltaFx {
         MinecraftClient client = MinecraftClient.getInstance();
         screenW = width;
         screenH = height;
-        if (client.world == null || ACTIVE.isEmpty() && DROPS.isEmpty() && flash <= 0.02F) {
+        if (client.world == null || ACTIVE.isEmpty() && FLECKS.isEmpty() && WORDS.isEmpty() && impactTicks <= 0 && ghostRunCount == 0 && lastRunCount == 0) {
             return;
         }
 
+        int now = (int)(client.world.getTime() % 100000L);
+        // Poses are held: nothing here moves more often than once a tick, and most of it on twos.
+        int beat = now / 2;
+
         for (Fx fx : ACTIVE) {
             if (fx.kind == HostNetworking.FX_BOLT && fx.slot == 0) {
-                face(context, fx, (float)fx.age + tickDelta, width, height, tickDelta);
+                face(context, fx, width, height, tickDelta);
             }
         }
 
-        if (flash > 0.02F) {
-            context.fill(0, 0, width, height, argb(flashColor, flash * 0.45F));
+        if (impactTicks == 3) {
+            // An impact frame: one tick of nothing but white.
+            context.fill(0, 0, width, height, 0xE6FFFFFF);
+        } else if (impactTicks > 0) {
+            context.fill(0, 0, width, height, 0x8C0B1030);
         }
 
         if (!captured) {
             return;
         }
 
-        float time = (float)(client.world.getTime() % 100000L) + tickDelta;
-        // Drawn animation holds each pose for two ticks.
-        int beat = (int)(client.world.getTime() % 100000L / 2L);
-        begin(context);
+        canvas(width, height);
+        float sc = scale();
+        if (impactTicks > 0 && impactTicks < 3) {
+            // ...then two of hard lines flying out of the hit.
+            for (int i = 0; i < 22; i++) {
+                double a = (double)i / 22.0 * Math.PI * 2.0 + hash(5L, i, now) * 0.2;
+                float near = (40.0F + (float)(hash(7L, i, now) + 0.5) * 60.0F) * sc;
+                float far = (float)Math.max(width, height);
+                stroke(
+                    impactX + (float)Math.cos(a) * near, impactY + (float)Math.sin(a) * near, impactX + (float)Math.cos(a) * far, impactY + (float)Math.sin(a) * far, (1.5F + (float)(i % 3)) * sc, BARE | (i % 4 == 0 ? impactColor : 0xFFFFFF)
+                );
+            }
+        }
 
         for (Fx fx : ACTIVE) {
-            float age = (float)fx.age + tickDelta;
             switch (fx.kind) {
-                case HostNetworking.FX_SELF -> frame(fx, age, tickDelta, beat, width, height);
-                case HostNetworking.FX_PULSE -> pulse(fx, age, width, height);
-                case HostNetworking.FX_NODE -> node(fx, age, time, beat);
-                case HostNetworking.FX_ARC -> arc(fx, age, beat);
-                case HostNetworking.FX_TENDRIL -> arm(client, fx, age, time, beat, tickDelta, width, height);
-                case HostNetworking.FX_BOLT -> shot(client, fx, age, beat, tickDelta, width, height);
+                case HostNetworking.FX_SELF -> frame(fx, beat, width, height);
+                case HostNetworking.FX_PULSE -> pulse(fx, width, height);
+                case HostNetworking.FX_NODE -> node(fx, beat);
+                case HostNetworking.FX_ARC -> arc(fx, now);
+                case HostNetworking.FX_TENDRIL -> arm(client, fx, now, beat, width, height);
+                case HostNetworking.FX_BOLT -> shot(client, fx, now, beat, width, height);
                 default -> {
                 }
             }
         }
 
-        for (Drop drop : DROPS) {
-            float a = MathHelper.clamp((float)drop.life / 5.0F, 0.0F, 1.0F);
-            float x = drop.x + drop.vx * tickDelta;
-            float y = drop.y + drop.vy * tickDelta;
-            disc(x, y, drop.radius + 1.6F * scale(), argb(INK, a));
-            disc(x, y, drop.radius, argb(drop.color, a));
-            disc(x - drop.radius * 0.3F, y - drop.radius * 0.3F, drop.radius * 0.3F, argb(0xFFFFFF, a));
+        for (Fleck fleck : FLECKS) {
+            float s = (float)(fleck.size * cell);
+            box(fleck.x, fleck.y, fleck.x + s - 1.0F, fleck.y + s - 1.0F, (fleck.size > 1 ? SOLID : BARE) | fleck.color);
         }
 
-        end();
+        flush(context, beat, now);
+        TextRenderer font = client.textRenderer;
+
+        for (Word word : WORDS) {
+            // Lettering slams in oversized and judders in place.
+            float size = (word.age == 0 ? 3.4F : (word.age == 1 ? 2.2F : 2.6F)) * sc;
+            float jx = (float)hash(word.life, word.age, 1) * 5.0F * sc;
+            float jy = (float)hash(word.life, word.age, 2) * 5.0F * sc;
+            if (word.age > word.life - 2 && word.age % 2 == 0) {
+                continue;
+            }
+
+            MatrixStack matrices = context.getMatrices();
+            matrices.push();
+            matrices.translate(word.x + jx, word.y + jy, 0.0F);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(word.turn));
+            matrices.scale(size, size, 1.0F);
+            int half = font.getWidth(word.text) / 2;
+
+            for (int ox = -1; ox <= 1; ox++) {
+                for (int oy = -1; oy <= 1; oy++) {
+                    if (ox != 0 || oy != 0) {
+                        context.drawText(font, word.text, -half + ox, -4 + oy, SOLID | INK, false);
+                    }
+                }
+            }
+
+            context.drawText(font, word.text, -half + 1, -3, SOLID | MAGENTA, false);
+            context.drawText(font, word.text, -half, -4, SOLID | word.color, false);
+            matrices.pop();
+        }
     }
 
-    /** The arm of mass that reaches from the edge of the screen and holds on to its work. */
-    private static void arm(MinecraftClient client, Fx fx, float age, float time, int beat, float tickDelta, int width, int height) {
+    /** The arm of mass that comes out of the edge of the screen and grips its work. */
+    private static void arm(MinecraftClient client, Fx fx, int now, int beat, int width, int height) {
         float sc = scale();
         boolean drain = fx.slot == HostNetworking.SLOT_DRAIN;
         float ox = (float)width + 14.0F * sc;
         float oy = (float)height * (drain ? 0.72F : 0.5F + 0.11F * (float)(fx.slot % 3));
-        float[] tip = project(current(fx, client, tickDelta));
+        float[] tip = project(current(fx, client));
         float dx = tip[0] - ox;
         float dy = tip[1] - oy;
         float len = Math.max(1.0F, (float)Math.sqrt((double)(dx * dx + dy * dy)));
         float nx = -dy / len;
         float ny = dx / len;
-        // The arm sags like something with weight, and sways.
-        float bend = len * (0.16F + 0.05F * (float)Math.sin((double)(time * 0.11F) + (double)fx.seed));
+        // It hangs like something with weight, and the hang changes pose on the beat.
+        float bend = len * (0.14F + 0.07F * (float)hash(fx.seed, beat / 2, 1));
         float cx = ox + dx * 0.5F + nx * bend;
         float cy = oy + dy * 0.5F + ny * bend + 18.0F * sc;
-        float grow = fx.age >= 100 ? 1.0F : MathHelper.clamp(age / 4.0F, 0.0F, 1.0F);
-        float reach = Math.min(grow, MathHelper.clamp(((float)fx.life - tickDelta) / 4.0F, 0.0F, 1.0F));
+        float reach = fx.age >= 100 ? 1.0F : Math.min(1.0F, (float)(fx.age + 1) / 2.0F);
+        if (fx.life <= 2) {
+            reach = Math.min(reach, (float)fx.life / 3.0F);
+        }
+
         if (reach <= 0.02F) {
             return;
         }
 
-        int joints = 26;
-        int extra = 4;
-        float[] xs = new float[joints + extra];
-        float[] ys = new float[joints + extra];
-        float[] rs = new float[joints + extra];
+        int joints = 22;
+        float[] xs = new float[joints];
+        float[] ys = new float[joints];
+        float[] rs = new float[joints];
         float flow = drain ? 1.0F : -1.0F;
+        // Sometimes a stretch of the arm simply is not there for a beat.
+        int torn = hash(fx.seed, beat, 9) > 0.36 ? 4 + (int)((hash(fx.seed, beat, 10) + 0.5) * 12.0) : -9;
 
         for (int i = 0; i < joints; i++) {
             float s = (float)i / (float)(joints - 1) * reach;
             float u = 1.0F - s;
-            float bx = u * u * ox + 2.0F * u * s * cx + s * s * tip[0];
-            float by = u * u * oy + 2.0F * u * s * cy + s * s * tip[1];
-            float sway = (float)Math.sin((double)(s * 11.0F) + (double)beat * 1.3 + (double)fx.seed) * 5.0F * sc * (float)Math.sin(Math.PI * (double)s);
-            xs[i] = bx + nx * sway;
-            ys[i] = by + ny * sway;
-            float base = MathHelper.lerp((float)Math.pow((double)s, 0.7), 27.0F, 9.0F) * sc;
-            // Lumps travel along the arm: the mass is being pumped out to the work, or drunk back.
-            float lump = (float)Math.pow(Math.max(0.0, Math.sin((double)(s * 13.0F) + (double)(flow * time * 0.45F))), 3.0) * 7.0F * sc;
-            rs[i] = base + lump;
+            float sway = (float)hash(fx.seed, i, beat) * 9.0F * sc * (float)Math.sin(Math.PI * (double)s);
+            xs[i] = u * u * ox + 2.0F * u * s * cx + s * s * tip[0] + nx * sway;
+            ys[i] = u * u * oy + 2.0F * u * s * cy + s * s * tip[1] + ny * sway;
+            float base = MathHelper.lerp((float)Math.pow((double)s, 0.7), 26.0F, 9.0F) * sc;
+            // Lumps travel along it: mass pumped out to the work, or drunk back.
+            int phase = Math.floorMod(i + (int)flow * now, 5);
+            rs[i] = base + (phase == 0 ? 8.0F : (phase == 1 ? 4.0F : 0.0F)) * sc;
         }
 
-        // The grip: a fist that swells as it lands a blow, with three stubby fingers working at the block.
-        int last = joints - 1;
-        float hit = fx.punch < 0 ? 0.0F : (float)Math.exp((double)(-(float)fx.punch - tickDelta) / 2.5);
-        float fist = 15.0F * sc * (1.0F + 0.2F * (float)Math.sin((double)beat * 1.9)) * (1.0F + 0.8F * hit) * Math.min(1.0F, reach * 1.2F);
-        rs[last] = Math.max(rs[last], fist);
-        float ax = xs[last] - xs[last - 1];
-        float ay = ys[last] - ys[last - 1];
-        float heading = (float)Math.atan2((double)ay, (double)ax);
-
-        for (int f = 0; f < 3; f++) {
-            float spread = ((float)f - 1.0F) * 0.75F + (float)hash(fx.seed, f, beat) * 0.5F;
-            float out = fist * (0.95F + 0.35F * (float)Math.abs(hash(fx.seed + 5L, f, beat)));
-            xs[joints + f] = xs[last] + (float)Math.cos((double)(heading + spread)) * out;
-            ys[joints + f] = ys[last] + (float)Math.sin((double)(heading + spread)) * out;
-            rs[joints + f] = fist * 0.44F;
-        }
-
-        // A drip hanging off the belly of the arm.
-        int mid = joints / 2;
-        xs[joints + 3] = xs[mid];
-        ys[joints + 3] = ys[mid] + rs[mid] * (0.9F + 0.5F * (float)Math.abs(Math.sin((double)beat * 0.7)));
-        rs[joints + 3] = rs[mid] * 0.4F;
-        if (hit > 0.15F && reach >= 1.0F) {
-            burst(xs[last], ys[last], fist * (1.5F + 1.4F * (1.0F - hit)), fist * 0.8F, 8, (float)beat * 0.6F, 0xFFFFFF, hit);
-        }
-
-        mass(xs, ys, rs, joints + extra, joints, fx.color, 0.96F);
-    }
-
-    /** The shot: the mass gathers at the bottom of the screen, then throws itself at the target. */
-    private static void shot(MinecraftClient client, Fx fx, float age, int beat, float tickDelta, int width, int height) {
-        float sc = scale();
-        float launch = (float)fx.launch();
-        boolean lash = fx.slot != 0;
-        float ox = lash ? (float)width + 14.0F * sc : (float)width * 0.5F;
-        float oy = lash ? (float)height * 0.55F : (float)height + 18.0F * sc;
-        float[] tip = project(current(fx, client, tickDelta));
-        if (age < launch) {
-            // Gathering: a swelling knot with smaller lumps crowding into it.
-            float charge = age / Math.max(1.0F, launch);
-            float[] xs = new float[5];
-            float[] ys = new float[5];
-            float[] rs = new float[5];
-            xs[0] = ox;
-            ys[0] = oy - 26.0F * sc * charge;
-            rs[0] = (14.0F + 30.0F * charge) * sc * (1.0F + 0.08F * (float)hash(fx.seed, 1, beat));
-
-            for (int i = 1; i < 5; i++) {
-                double a = Math.PI + (double)i / 5.0 * Math.PI + (double)beat * 0.5;
-                float away = (60.0F - 46.0F * charge) * sc;
-                xs[i] = xs[0] + (float)Math.cos(a) * away;
-                ys[i] = ys[0] + (float)Math.abs(Math.sin(a)) * away * 0.5F + 6.0F * sc;
-                rs[i] = (5.0F + 7.0F * charge) * sc;
+        for (int i = 0; i + 1 < joints; i++) {
+            if (i == torn || i == torn + 1) {
+                continue;
             }
 
-            mass(xs, ys, rs, 5, 1, fx.color, 0.96F);
+            limb(xs[i], ys[i], rs[i], xs[i + 1], ys[i + 1], rs[i + 1], fx.color);
+        }
+
+        // A drip off its belly.
+        int mid = joints / 2;
+        blob(xs[mid], ys[mid] + rs[mid] * (1.0F + 0.5F * (float)(beat % 3)), rs[mid] * 0.4F, fx.color);
+        // The fist: it balloons on the tick it hits, then snaps back.
+        int last = joints - 1;
+        float hit = fx.punch == 0 ? 2.1F : (fx.punch == 1 ? 1.5F : 1.0F);
+        float fist = 15.0F * sc * hit * (beat % 2 == 0 ? 1.0F : 1.12F) * Math.min(1.0F, reach * 1.2F);
+        float heading = (float)Math.atan2((double)(ys[last] - ys[last - 1]), (double)(xs[last] - xs[last - 1]));
+        if (fx.punch >= 0 && fx.punch <= 1 && reach >= 1.0F) {
+            spike(xs[last], ys[last], fist * (fx.punch == 0 ? 2.6F : 3.4F), fist * 1.1F, 9, (float)now * 0.9F, SOLID | 0xFFFFFF);
+        }
+
+        blob(xs[last], ys[last], fist, fx.color);
+
+        for (int f = 0; f < 3; f++) {
+            float spread = ((float)f - 1.0F) * 0.8F + (float)hash(fx.seed, f, now) * 0.7F;
+            float out = fist * (1.0F + 0.4F * (float)Math.abs(hash(fx.seed + 5L, f, now)));
+            blob(xs[last] + (float)Math.cos((double)(heading + spread)) * out, ys[last] + (float)Math.sin((double)(heading + spread)) * out, fist * 0.42F, fx.color);
+        }
+
+        for (Pellet pellet : PELLETS) {
+            if (pellet.slot != fx.slot) {
+                continue;
+            }
+
+            float s = MathHelper.clamp(pellet.along, 0.0F, 1.0F) * reach;
+            float u = 1.0F - s;
+            float px = u * u * ox + 2.0F * u * s * cx + s * s * tip[0] + nx * pellet.side * 30.0F * sc;
+            float py = u * u * oy + 2.0F * u * s * cy + s * s * tip[1] + ny * pellet.side * 30.0F * sc;
+            float size = (float)(cell * 2);
+            box(px - size * 0.5F, py - size * 0.5F, px + size * 0.5F, py + size * 0.5F, SOLID | pellet.color);
+        }
+    }
+
+    /** The shot: a knot of mass at the bottom of the screen, a lock on the target, then a bolt that is simply there. */
+    private static void shot(MinecraftClient client, Fx fx, int now, int beat, int width, int height) {
+        float sc = scale();
+        int launch = fx.launch();
+        boolean lash = fx.slot != 0;
+        float ox = lash ? (float)width + 14.0F * sc : (float)width * 0.5F;
+        float oy = lash ? (float)height * 0.55F : (float)height + 10.0F * sc;
+        float[] tip = project(current(fx, client));
+        if (fx.age < launch) {
+            float charge = (float)(fx.age + 1) / (float)Math.max(1, launch);
+            blob(ox + (float)hash(fx.seed, now, 1) * 8.0F * sc, oy - 22.0F * sc * charge, (12.0F + 34.0F * charge) * sc, fx.color);
+
+            for (int i = 0; i < 5; i++) {
+                double a = Math.PI + (hash(fx.seed, i, now) + 0.5) * Math.PI;
+                float away = (30.0F + 60.0F * (1.0F - charge)) * sc;
+                blob(ox + (float)Math.cos(a) * away, oy - 22.0F * sc * charge + (float)Math.sin(a) * away * 0.6F, (4.0F + 5.0F * charge) * sc, i % 2 == 0 ? fx.color : 0xFFFFFF);
+            }
+
+            if (!lash && tip[2] != 0.0F) {
+                // Lock-on: four corners slam shut around the target.
+                float open = (70.0F - 50.0F * charge) * sc;
+                float arm = 12.0F * sc;
+                float t = 2.5F * sc;
+                int tone = fx.age % 2 == 0 ? SOLID | 0xFFFFFF : SOLID | MAGENTA;
+
+                for (int sx = -1; sx <= 1; sx += 2) {
+                    for (int sy = -1; sy <= 1; sy += 2) {
+                        float px = tip[0] + (float)sx * open;
+                        float py = tip[1] + (float)sy * open;
+                        box(Math.min(px, px - (float)sx * arm), py - t, Math.max(px, px - (float)sx * arm), py + t, tone);
+                        box(px - t, Math.min(py, py - (float)sy * arm), px + t, Math.max(py, py - (float)sy * arm), tone);
+                    }
+                }
+            }
+
             return;
         }
 
-        float span = Math.max(1.0F, (float)fx.total - launch);
-        float travel = MathHelper.clamp((age - launch) / span, 0.0F, 1.0F);
-        float after = MathHelper.clamp((age - (float)fx.total) / 9.0F, 0.0F, 1.0F);
-        // Once it has hit, the tail lets go of the screen and is swallowed by the impact.
-        float tail = after * after;
-        float head = (float)Math.pow((double)travel, 0.75);
-        if (tail >= 0.98F) {
+        int since = fx.age - launch;
+        int after = fx.age - fx.total;
+        // No travel to speak of: half way on the first tick, there on the second.
+        float head = since <= 0 ? 0.55F : 1.0F;
+        if (after >= 2 && fx.age % 2 == 1 || after >= 4) {
             return;
         }
 
-        int joints = 16;
-        float[] xs = new float[joints + 1];
-        float[] ys = new float[joints + 1];
-        float[] rs = new float[joints + 1];
         float dx = tip[0] - ox;
         float dy = tip[1] - oy;
         float len = Math.max(1.0F, (float)Math.sqrt((double)(dx * dx + dy * dy)));
         float nx = -dy / len;
         float ny = dx / len;
+        int joints = 9;
+        float[] xs = new float[joints];
+        float[] ys = new float[joints];
+        float thin = after > 0 ? 0.55F : 1.0F;
 
         for (int i = 0; i < joints; i++) {
-            float s = MathHelper.lerp((float)i / (float)(joints - 1), tail, head);
-            float wobble = (float)Math.sin((double)(s * 9.0F) + (double)beat * 2.1 + (double)fx.seed) * 7.0F * sc * (float)Math.sin(Math.PI * (double)s);
-            xs[i] = ox + dx * s + nx * wobble;
-            ys[i] = oy + dy * s + ny * wobble;
-            // Fat at the screen, thin in the middle where it stretches, heavy again at the head.
-            float body = (lash ? 9.0F : 15.0F) * sc * (1.0F - 0.55F * (float)Math.sin(Math.PI * (double)((float)i / (float)(joints - 1))));
-            rs[i] = body * (1.0F - after * 0.7F);
+            float s = (float)i / (float)(joints - 1) * head;
+            // A fresh zigzag every tick.
+            float jag = i == 0 || i == joints - 1 ? 0.0F : (float)hash(fx.seed, i, now) * (lash ? 34.0F : 60.0F) * sc;
+            xs[i] = ox + dx * s + nx * jag;
+            ys[i] = oy + dy * s + ny * jag;
         }
 
-        float fist = (lash ? 13.0F : 24.0F) * sc * (1.0F - after * 0.6F);
-        xs[joints] = xs[joints - 1];
-        ys[joints] = ys[joints - 1];
-        rs[joints] = fist;
-        if (after > 0.0F) {
-            burst(tip[0], tip[1], (34.0F + 80.0F * after) * sc, (16.0F + 30.0F * after) * sc, 9, (float)beat * 0.7F, 0xFFFFFF, 1.0F - after);
-            burst(tip[0], tip[1], (20.0F + 46.0F * after) * sc, (9.0F + 18.0F * after) * sc, 7, -(float)beat * 0.5F, fx.color, 1.0F - after);
+        float width0 = (lash ? 9.0F : 17.0F) * sc * thin;
+
+        for (int i = 0; i + 1 < joints; i++) {
+            float w = width0 * (1.0F - 0.5F * (float)i / (float)joints);
+            limb(xs[i], ys[i], w, xs[i + 1], ys[i + 1], w * 0.9F, fx.color);
         }
 
-        mass(xs, ys, rs, joints + 1, joints, fx.color, 1.0F - after * 0.4F);
+        for (int i = 0; i + 1 < joints; i++) {
+            stroke(xs[i], ys[i], xs[i + 1], ys[i + 1], width0 * 0.28F, SOLID | 0xFFFFFF);
+        }
+
+        // Forks kicking off the main bolt.
+        for (int k = 0; k < 3; k++) {
+            int at = 2 + k * 2;
+            if (at >= joints) {
+                break;
+            }
+
+            double a = hash(fx.seed + (long)k, now, 3) * Math.PI * 2.0;
+            float out = (30.0F + (float)(hash(fx.seed + (long)k, now, 4) + 0.5) * 50.0F) * sc;
+            stroke(xs[at], ys[at], xs[at] + (float)Math.cos(a) * out, ys[at] + (float)Math.sin(a) * out, 2.5F * sc, SOLID | (k % 2 == 0 ? 0xFFFFFF : fx.color));
+        }
+
+        float fist = (lash ? 13.0F : 24.0F) * sc * thin;
+        if (head >= 1.0F) {
+            int turn = now * 37 % 360;
+            spike(tip[0], tip[1], (after <= 0 ? 70.0F : 100.0F) * sc * (lash ? 0.6F : 1.0F), fist * 0.9F, 10, (float)Math.toRadians((double)turn), SOLID | 0xFFFFFF);
+            spike(tip[0], tip[1], (after <= 0 ? 42.0F : 60.0F) * sc * (lash ? 0.6F : 1.0F), fist * 0.6F, 7, -(float)Math.toRadians((double)turn), SOLID | fx.color);
+        }
+
+        blob(xs[joints - 1], ys[joints - 1], fist, fx.color);
     }
 
-    /** A jump of the mass between two things in the world. */
-    private static void arc(Fx fx, float age, int beat) {
+    /** A jump of the mass between two things in the world: a hard zigzag, different every tick. */
+    private static void arc(Fx fx, int now) {
         float[] a = project(fx.source);
         float[] b = project(fx.pos);
-        if (a[2] == 0.0F && b[2] == 0.0F) {
+        if (a[2] == 0.0F && b[2] == 0.0F || fx.life <= 2 && fx.life % 2 == 0) {
             return;
         }
 
         float sc = scale();
-        float fade = MathHelper.clamp((float)fx.life / 4.0F, 0.0F, 1.0F);
-        float reach = MathHelper.clamp(age / 2.0F, 0.0F, 1.0F);
-        int joints = 8;
-        float[] xs = new float[joints];
-        float[] ys = new float[joints];
-        float[] rs = new float[joints];
+        int joints = 7;
         float dx = b[0] - a[0];
         float dy = b[1] - a[1];
         float len = Math.max(1.0F, (float)Math.sqrt((double)(dx * dx + dy * dy)));
+        float px = a[0];
+        float py = a[1];
 
-        for (int i = 0; i < joints; i++) {
-            float s = (float)i / (float)(joints - 1) * reach;
-            float jag = i == 0 || i == joints - 1 ? 0.0F : (float)hash(fx.seed, i, beat) * 26.0F * sc;
-            xs[i] = a[0] + dx * s - dy / len * jag;
-            ys[i] = a[1] + dy * s + dx / len * jag;
-            rs[i] = (i == joints - 1 ? 9.0F : 5.5F) * sc * fade;
+        for (int i = 1; i < joints; i++) {
+            float s = (float)i / (float)(joints - 1);
+            float jag = i == joints - 1 ? 0.0F : (float)hash(fx.seed, i, now) * 34.0F * sc;
+            float x = a[0] + dx * s - dy / len * jag;
+            float y = a[1] + dy * s + dx / len * jag;
+            limb(px, py, 6.0F * sc, x, y, 5.0F * sc, fx.color);
+            stroke(px, py, x, y, 1.6F * sc, SOLID | 0xFFFFFF);
+            px = x;
+            py = y;
         }
 
-        if (reach >= 1.0F) {
-            burst(b[0], b[1], 22.0F * sc, 9.0F * sc, 6, (float)beat * 0.8F, 0xFFFFFF, fade);
-        }
-
-        mass(xs, ys, rs, joints, joints, fx.color, fade);
+        spike(b[0], b[1], 28.0F * sc, 9.0F * sc, 7, (float)now, SOLID | 0xFFFFFF);
+        blob(b[0], b[1], 9.0F * sc, fx.color);
     }
 
-    /** A shockwave rolling out across the ground. */
-    private static void pulse(Fx fx, float age, int width, int height) {
+    /** A shockwave across the ground, in steps, with an echo behind it. */
+    private static void pulse(Fx fx, int width, int height) {
         float sc = scale();
-        float t = MathHelper.clamp(age / (float)Math.max(1, fx.total), 0.0F, 1.0F);
+        float t = MathHelper.clamp((float)fx.age / (float)Math.max(1, fx.total), 0.0F, 1.0F);
         float ease = 1.0F - (1.0F - t) * (1.0F - t);
-        float alpha = 1.0F - t * t;
+        if (t > 0.7F && fx.age % 2 == 0) {
+            return;
+        }
+
         if (fx.slot == 0) {
             float x = (float)width * 0.5F;
             float y = (float)height * 1.02F;
-            wave(x, y, ease * (float)width * 0.72F, 0.42F, (8.0F + 26.0F * (1.0F - t)) * sc, fx.color, alpha);
-            wave(x, y, ease * (float)width * 0.5F, 0.42F, (5.0F + 12.0F * (1.0F - t)) * sc, mix(fx.color, 0xFFFFFF, 0.5F), alpha * 0.9F);
+            hoop(x, y, ease * (float)width * 0.74F, 0.42F, (10.0F + 26.0F * (1.0F - t)) * sc, SOLID | fx.color);
+            hoop(x, y, ease * (float)width * 0.74F - 8.0F * sc, 0.42F, 4.0F * sc, SOLID | 0xFFFFFF);
+            hoop(x, y, ease * (float)width * 0.5F, 0.42F, (5.0F + 10.0F * (1.0F - t)) * sc, SOLID | MAGENTA);
         } else {
             float[] at = project(fx.pos.add(0.0, 0.1, 0.0));
             if (at[2] != 0.0F) {
-                wave(at[0], at[1], ease * 70.0F * sc, 0.45F, (4.0F + 12.0F * (1.0F - t)) * sc, fx.color, alpha);
+                hoop(at[0], at[1], ease * 80.0F * sc, 0.45F, (5.0F + 12.0F * (1.0F - t)) * sc, SOLID | fx.color);
+                hoop(at[0], at[1], ease * 50.0F * sc, 0.45F, 4.0F * sc, SOLID | 0xFFFFFF);
             }
         }
     }
 
-    /** A lasting state (barrier, slowed time, a mended chip): the mass creeps in around the frame. */
-    private static void frame(Fx fx, float age, float tickDelta, int beat, int width, int height) {
-        float in = MathHelper.clamp(age / 5.0F, 0.0F, 1.0F);
-        float out = MathHelper.clamp(((float)fx.life - tickDelta) / 6.0F, 0.0F, 1.0F);
-        float show = Math.min(in, out);
+    /** A lasting state (barrier, slowed time, a mended chip): the mass crowds in around the frame. */
+    private static void frame(Fx fx, int beat, int width, int height) {
+        float show = Math.min(Math.min(1.0F, (float)(fx.age + 1) / 3.0F), Math.min(1.0F, (float)fx.life / 3.0F));
         if (show <= 0.02F) {
             return;
         }
 
         float unit = (float)height * 0.085F;
         int bottom = 11;
-        int side = 5;
-        int count = bottom + side * 2;
-        float[] xs = new float[count];
-        float[] ys = new float[count];
-        float[] rs = new float[count];
+        float px = 0.0F;
+        float py = 0.0F;
+        float pr = 0.0F;
 
         for (int i = 0; i < bottom; i++) {
-            float r = unit * (0.75F + 0.5F * (float)Math.abs(hash(fx.seed, i, 0)));
-            xs[i] = (float)width * ((float)i + 0.5F) / (float)bottom;
-            ys[i] = (float)height + r * (1.0F - 0.75F * show) - (float)Math.sin((double)beat * 0.9 + (double)i * 1.7) * r * 0.22F;
-            rs[i] = r;
+            float r = unit * (0.75F + 0.5F * (float)Math.abs(hash(fx.seed, i, beat / 2)));
+            float x = (float)width * ((float)i + 0.5F) / (float)bottom;
+            float y = (float)height + r * (1.0F - 0.75F * show) - (float)hash(fx.seed, i, beat) * r * 0.4F;
+            if (i > 0) {
+                limb(px, py, pr, x, y, r, fx.color);
+            } else {
+                blob(x, y, r, fx.color);
+            }
+
+            px = x;
+            py = y;
+            pr = r;
         }
 
-        for (int i = 0; i < side; i++) {
-            float r = unit * (0.6F + 0.4F * (float)Math.abs(hash(fx.seed, i, 7))) * (1.0F - (float)i / (float)side * 0.55F);
+        for (int i = 0; i < 5; i++) {
+            float r = unit * (0.6F + 0.4F * (float)Math.abs(hash(fx.seed, i, 7))) * (1.0F - (float)i / 5.0F * 0.55F);
             float y = (float)height - unit * 0.6F - (float)i * unit * 1.25F;
-            float bob = (float)Math.sin((double)beat * 0.8 + (double)i * 2.1) * r * 0.2F;
-            xs[bottom + i] = -r * (1.0F - 0.8F * show) + bob;
-            ys[bottom + i] = y;
-            rs[bottom + i] = r;
-            xs[bottom + side + i] = (float)width + r * (1.0F - 0.8F * show) - bob;
-            ys[bottom + side + i] = y;
-            rs[bottom + side + i] = r;
+            float bob = (float)hash(fx.seed, i + 20, beat) * r * 0.5F;
+            blob(-r * (1.0F - 0.8F * show) + bob, y, r, fx.color);
+            blob((float)width + r * (1.0F - 0.8F * show) - bob, y, r, fx.color);
         }
 
-        mass(xs, ys, rs, count, bottom, fx.color, 0.9F * show);
+        // Loose squares of it climbing the edges.
+        for (int i = 0; i < 8; i++) {
+            float x = i % 2 == 0 ? (float)(cell * (1 + i)) : (float)width - (float)(cell * (2 + i));
+            float y = (float)height - (float)Math.floorMod(beat * 13 + i * 47, Math.max(1, height));
+            box(x, y, x + (float)(cell * 2) - 1.0F, y + (float)(cell * 2) - 1.0F, SOLID | (i % 3 == 0 ? 0xFFFFFF : fx.color));
+        }
     }
 
-    /** The turret node: a knot of the mass hanging in the air. */
-    private static void node(Fx fx, float age, float time, int beat) {
+    /** The turret node: a knot of the mass hanging in the air inside a snapping bracket. */
+    private static void node(Fx fx, int beat) {
         float[] at = project(fx.pos);
-        if (at[2] == 0.0F) {
+        if (at[2] == 0.0F || fx.life < 6 && fx.life % 2 == 0) {
             return;
         }
 
         float sc = scale();
         double distance = Math.sqrt(fx.pos.squaredDistanceTo(cameraPos));
-        float r = MathHelper.clamp((float)(150.0 / Math.max(2.0, distance)), 5.0F, 22.0F) * sc * MathHelper.clamp(age / 5.0F, 0.0F, 1.0F) * MathHelper.clamp((float)fx.life / 6.0F, 0.0F, 1.0F);
-        burst(at[0], at[1], r * 2.1F, r * 0.9F, 4, time * 0.12F, mix(fx.color, 0xFFFFFF, 0.5F), 0.9F);
-        float[] xs = new float[4];
-        float[] ys = new float[4];
-        float[] rs = new float[4];
-        xs[0] = at[0];
-        ys[0] = at[1];
-        rs[0] = r * (1.0F + 0.1F * (float)Math.sin((double)beat * 1.4));
+        float r = MathHelper.clamp((float)(150.0 / Math.max(2.0, distance)), 5.0F, 22.0F) * sc * Math.min(1.0F, (float)(fx.age + 1) / 2.0F);
+        spike(at[0], at[1], r * 2.3F, r * 0.9F, 4, (float)(beat % 2) * 0.785F, SOLID | 0xFFFFFF);
+        blob(at[0], at[1], r * (beat % 2 == 0 ? 1.0F : 1.15F), fx.color);
 
-        for (int i = 1; i < 4; i++) {
-            double a = (double)time * 0.2 + (double)i * Math.PI * 2.0 / 3.0;
-            xs[i] = at[0] + (float)Math.cos(a) * r * 1.9F;
-            ys[i] = at[1] + (float)Math.sin(a) * r * 1.1F;
-            rs[i] = r * 0.32F;
+        for (int i = 0; i < 3; i++) {
+            double a = (double)beat * 0.9 + (double)i * Math.PI * 2.0 / 3.0;
+            blob(at[0] + (float)Math.cos(a) * r * 2.0F, at[1] + (float)Math.sin(a) * r * 1.2F, r * 0.32F, i == 0 ? MAGENTA : fx.color);
         }
-
-        mass(xs, ys, rs, 4, 1, fx.color, 0.96F);
     }
 
-    /** Volta's sly face cuts in over the view for the moment before the shot. */
-    private static void face(DrawContext context, Fx fx, float age, int width, int height, float tickDelta) {
-        float end = (float)fx.total + 5.0F;
-        if (age >= end) {
+    /**
+     * Volta's face before a shot. Not a portrait held on screen: a few ticks of strobing, each one a
+     * different size, place and expression, torn into strips, with the odd frame blown out to white.
+     */
+    private static void face(DrawContext context, Fx fx, int width, int height, float tickDelta) {
+        int t = fx.age;
+        if (t > fx.total + 1) {
             return;
         }
 
-        float in = MathHelper.clamp(age / 3.0F, 0.0F, 1.0F);
-        float out = MathHelper.clamp((end - age) / 4.0F, 0.0F, 1.0F);
-        float show = Math.min(in, out);
-        float size = (float)Math.min(width, height) * 0.74F * (0.9F + 0.1F * in);
-        float x = (float)width * 0.5F - size * 0.5F + (1.0F - in) * (float)width * 0.12F;
-        float y = (float)height * 0.52F - size * 0.5F;
         int rgb = fx.color & 0xFFFFFF;
-        int band = (int)(size * 0.36F);
-        int cy = (int)((float)height * 0.5F);
-        // A letterbox bar slams across the middle of the screen and she is in it.
-        int open = (int)((float)band * show);
-        context.fill(0, cy - open, width, cy + open, 0x101820 | (int)(150.0F * show) << 24);
-        context.fill(0, cy - open - 2, width, cy - open, rgb | (int)(255.0F * show) << 24);
-        context.fill(0, cy + open, width, cy + open + 2, rgb | (int)(255.0F * show) << 24);
-        context.enableScissor(0, cy - open, width, cy + open);
-        // Ghost copies either side sell the speed of the cut.
-        VoltaRig.draw(context, x - 14.0F * (1.0F - out + 0.3F), y, size, -4.0F, 0.25F * show, tickDelta);
-        VoltaRig.draw(context, x + 14.0F * (1.0F - out + 0.3F), y, size, -4.0F, 0.25F * show, tickDelta);
-        VoltaRig.draw(context, x, y, size, -4.0F + 3.0F * (1.0F - in), show, tickDelta);
-
-        for (int line = cy - open; line < cy + open; line += 3) {
-            context.fill(0, line, width, line + 1, rgb | (int)(26.0F * show) << 24);
+        int cy = height / 2 + (int)(hash(fx.seed, t, 6) * (double)height * 0.08);
+        int band = (int)((float)Math.min(width, height) * (0.2F + 0.14F * (float)Math.abs(hash(fx.seed, t, 7))));
+        boolean blown = hash(fx.seed, t, 5) > 0.24;
+        boolean shown = t <= 1 || hash(fx.seed, t, 11) > -0.3;
+        context.fill(0, cy - band - 3, width, cy - band, SOLID | (t % 2 == 0 ? rgb : MAGENTA));
+        context.fill(0, cy + band, width, cy + band + 3, SOLID | (t % 2 == 0 ? MAGENTA : rgb));
+        if (!shown) {
+            // A dropped frame: only the bars and a wash of static.
+            context.fill(0, cy - band, width, cy + band, 0x500B1030);
+            return;
         }
 
-        // Speed lines racing towards the muzzle as the charge peaks.
+        context.fill(0, cy - band, width, cy + band, blown ? 0xF2FFFFFF : 0xE60B1030);
+        int[] looks = new int[]{1, 4, 1, 7, 6, 1, 4, 7};
+        VoltaRig.forced = looks[Math.floorMod(t + (int)fx.seed, looks.length)];
+        float size = (float)Math.min(width, height) * (0.74F + 0.3F * (float)(hash(fx.seed, t, 2) + 0.5));
+        float x = (float)width * 0.5F - size * 0.5F + (float)hash(fx.seed, t, 3) * (float)width * 0.2F;
+        float y = (float)cy - size * 0.47F;
+        int strips = 6;
+
+        for (int i = 0; i < strips; i++) {
+            int y0 = cy - band + 2 * band * i / strips;
+            int y1 = cy - band + 2 * band * (i + 1) / strips;
+            float slip = hash(fx.seed, t * 7 + i, 8) > -0.1 ? (float)hash(fx.seed, t * 13 + i, 9) * (float)width * 0.14F : 0.0F;
+            context.enableScissor(0, y0, width, y1);
+            VoltaRig.draw(context, x + slip - 10.0F, y, size, 0.0F, 0.4F, tickDelta);
+            VoltaRig.draw(context, x + slip + 10.0F, y + 3.0F, size, 0.0F, 0.4F, tickDelta);
+            VoltaRig.draw(context, x + slip, y, size, t % 3 == 0 ? -6.0F : 0.0F, 1.0F, tickDelta);
+            context.disableScissor();
+        }
+
+        VoltaRig.forced = -1;
+
+        for (int line = cy - band; line < cy + band; line += 3) {
+            context.fill(0, line, width, line + 1, (blown ? 0x30 : 0x48) << 24 | INK);
+        }
+
+        // Blocks of dead signal and streaks, different every tick.
         for (int i = 0; i < 9; i++) {
-            float lane = (float)(hash(fx.seed, i, 3) + 0.5);
-            float phase = (age * (0.11F + 0.05F * (float)(i % 3)) + lane) % 1.0F;
-            int ly = cy - open + (int)(lane * (float)open * 2.0F);
-            int lx = (int)((1.0F - phase) * (float)width * 1.3F) - width / 6;
-            context.fill(lx, ly, lx + width / 7, ly + 1, 0xFFFFFF | (int)(140.0F * show) << 24);
-        }
-
-        context.disableScissor();
-        if (age > (float)fx.launch() - 2.0F) {
-            float charge = MathHelper.clamp((age - (float)fx.launch() + 2.0F) / 2.0F, 0.0F, 1.0F) * out;
-            context.fill(0, cy - open, width, cy + open, 0xFFFFFF | (int)(110.0F * charge) << 24);
+            int bx = (int)((hash(fx.seed, t * 5 + i, 12) + 0.5) * (double)width);
+            int by = cy - band + (int)((hash(fx.seed, t * 5 + i, 13) + 0.5) * (double)(band * 2));
+            int bw = 12 + (int)((hash(fx.seed, t * 5 + i, 14) + 0.5) * (double)width * 0.22);
+            int tone = i % 3 == 0 ? 0xFFFFFF : (i % 3 == 1 ? MAGENTA : rgb);
+            context.fill(bx, by, bx + bw, by + 1 + i % 4, SOLID | tone);
         }
     }
 }

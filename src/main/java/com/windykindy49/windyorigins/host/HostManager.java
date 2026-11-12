@@ -89,7 +89,8 @@ public final class HostManager {
     private static final int GLOBAL_COOLDOWN = 30;
     private static final int MAGNET_TICKS = 70;
     private static final int DECOY_TICKS = 160;
-    private static final int BOLT_TICKS = 10;
+    /** From the request to the hit: her face strobes for a few ticks, then the shot is there. */
+    private static final int BOLT_TICKS = 6;
     private static final int QUIET_TICKS = 3600;
     private static final int QUIET_COOLDOWN = 24000;
     private static final int LISTEN_TICKS = 300;
@@ -282,8 +283,8 @@ public final class HostManager {
                 }
 
 
-                // One block every quarter of a second: slow enough to watch the arm take each one.
-                if (!var3.work.isEmpty() && var2.age % 5 == 0) {
+                // A block every three ticks: the arm whips from one to the next.
+                if (!var3.work.isEmpty() && var2.age % 3 == 0) {
                     var3.work.poll().run();
                     if (var3.work.isEmpty()) {
                         HostNetworking.fx(var2, HostNetworking.FX_STOP, 0, -1, var2.getPos(), 0, 0);

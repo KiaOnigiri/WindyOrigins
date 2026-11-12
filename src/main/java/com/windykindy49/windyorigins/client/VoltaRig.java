@@ -64,42 +64,62 @@ public final class VoltaRig {
         hair = hair + hairVel;
     }
 
+    /** When zero or more, this expression is drawn whatever the rig is currently doing. */
+    public static int forced = -1;
+
+    private static float noise(int var0, int var1) {
+        long var2 = (long)var0 * 0x9E3779B97F4A7C15L + (long)var1 * 0xC2B2AE3D27D4EB4FL;
+        var2 ^= var2 >>> 29;
+        var2 *= 0xBF58476D1CE4E5B9L;
+        var2 ^= var2 >>> 32;
+        return (float)(var2 & 0xFFFFL) / 65535.0F;
+    }
+
+    /**
+     * Volta is pixel art animated the way pixel art is: each pose is held for three ticks, parts
+     * shift by whole pixels instead of rotating, an expression changes in one frame, and now and
+     * then the picture slips.
+     */
     public static void draw(DrawContext var0, float var1, float var2, float var3, float var4, float var5, float var6) {
         MatrixStack var7 = var0.getMatrices();
-        float var8 = MathHelper.lerp(var6, prevHead, head) + var4;
-        float var9 = MathHelper.lerp(var6, prevHair, hair) - MathHelper.lerp(var6, prevHead, head);
-        float var10 = (float)age + var6;
-        float var11 = 1.0F + 0.012F * MathHelper.sin(var10 * 0.08F);
-        float var12 = MathHelper.lerp(var6, prevMorph, morph);
+        int var8 = age / 3;
+        // One art pixel is four units of the 256-unit canvas.
+        float var9 = 4.0F;
+        int var10 = Math.round(MathHelper.sin((float)var8 * 0.42F) * 1.4F);
+        int var11 = Math.round(MathHelper.sin((float)(var8 - 1) * 0.42F) * 1.4F) - var10;
+        int var12 = var8 / 3 % 2;
+        int var13 = talking ? var8 % 2 : 0;
+        float var14 = (float)Math.round(var4 / 6.0F) * 6.0F;
+        VoltaRig.Expression var15 = FACES[forced >= 0 && forced < FACES.length ? forced : face];
+        // A dropped frame: for one pose in a dozen the head slips sideways.
+        int var16 = noise(var8, 3) < 0.08F ? (noise(var8, 5) < 0.5F ? -2 : 2) : 0;
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         var7.push();
         var7.translate(var1, var2, 0.0F);
         var7.scale(var3 / 256.0F, var3 / 256.0F, 1.0F);
+        if (var14 != 0.0F) {
+            rotateAbout(var7, 128.0F, 190.0F, var14);
+        }
+
         var7.push();
-        rotateAbout(var7, 128.0F, 190.0F, var8);
-        rotateAbout(var7, 128.0F, 40.0F, -var9 * 1.6F);
+        var7.translate((float)(var10 + var11) * var9, 0.0F, 0.0F);
         layer(var0, "hair_back", var5);
         var7.pop();
         var7.push();
-        var7.translate(128.0F, 256.0F, 0.0F);
-        var7.scale(1.0F, var11, 1.0F);
-        var7.translate(-128.0F, -256.0F, 0.0F);
+        var7.translate(0.0F, (float)var12 * var9, 0.0F);
         layer(var0, "body", var5);
         layer(var0, "neck", var5);
         var7.pop();
         var7.push();
-        rotateAbout(var7, 128.0F, 190.0F, var8);
-        var7.translate(0.0F, (var11 - 1.0F) * -60.0F, 0.0F);
+        var7.translate((float)(var10 + var16) * var9, (float)(var12 - var13) * var9, 0.0F);
         layer(var0, "head", var5);
-        expression(var0, FACES[fromFace], var5 * (1.0F - var12), true);
-        expression(var0, FACES[face], var5 * var12, false);
+        expression(var0, var15, var5, false);
         var7.push();
-        rotateAbout(var7, 128.0F, 40.0F, -var9 * 0.9F);
+        var7.translate((float)var11 * var9, 0.0F, 0.0F);
         layer(var0, "hair_front", var5);
         var7.pop();
-        brows(var0, FACES[fromFace], var5 * (1.0F - var12));
-        brows(var0, FACES[face], var5 * var12);
+        brows(var0, var15, var5);
         layer(var0, "phones", var5);
         var7.pop();
         var7.pop();
