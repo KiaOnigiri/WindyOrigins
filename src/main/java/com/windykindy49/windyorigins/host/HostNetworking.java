@@ -54,6 +54,28 @@ public final class HostNetworking {
     public static final int SLOT_YANK = 10;
     /** A quick jab at a door or a lever. */
     public static final int SLOT_POKE = 11;
+    /** A thin arm with a needle on it: goes in, and on the sixth tick pushes the plunger. */
+    public static final int SLOT_INJECT = 12;
+    /** An arm from the other side of the screen that claps something over the target's eyes. */
+    public static final int SLOT_SLAP = 13;
+    /** An arm that sets something down in the world and lets go. */
+    public static final int SLOT_PLANT = 14;
+    /** A cable left trailing from the screen to something she is feeding; each re-send is a pulse down it. */
+    public static final int SLOT_CABLE = 15;
+    /** Eight hair-thin tracers (20..27) that snap out to whatever a scan has found. */
+    public static final int SLOT_TRACE = 20;
+    /** A mark pinned over a creature for as long as it lasts; the slot picks the mark. */
+    public static final int FX_TAG = 13;
+    public static final int TAG_BLINDFOLD = 0;
+    public static final int TAG_VIRUS = 1;
+    /** A piece drawn on the Host's screen itself; the slot picks which. */
+    public static final int FX_STAMP = 14;
+    public static final int STAMP_PALM = 0;
+    public static final int STAMP_CLOCK = 1;
+    public static final int STAMP_MEND = 2;
+    public static final int STAMP_EYES = 3;
+    public static final int STAMP_CRACK = 4;
+    public static final int STAMP_HANDS = 5;
     public static final int WORD_BLOCK = 0;
     public static final int WORD_SLOW = 1;
     public static final int WORD_PING = 2;

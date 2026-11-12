@@ -304,6 +304,7 @@ public final class HostClient {
             default -> 0;
         };
         speak(var0, var2, var4);
+        VoltaFx.prank(var1);
         switch (var1) {
             case HUD:
                 hudWasHidden = var0.options.hudHidden;

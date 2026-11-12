@@ -119,6 +119,10 @@ public final class VoltaFx {
         int punch = 99;
         final long seed;
         boolean landed;
+        /** The target is a place on the screen (fractions of its width and height), not in the world. */
+        boolean screen;
+        /** A word of its own to shout when it lands. */
+        String say;
 
         Fx(int kind, int slot, int casterId, int entityId, Vec3d pos, Vec3d source, int color, int ticks) {
             this.kind = kind;
@@ -221,7 +225,8 @@ public final class VoltaFx {
                 int gone = slot == 1 ? HostNetworking.FX_SELF : HostNetworking.FX_TENDRIL;
 
                 for (Fx fx : ACTIVE) {
-                    if (fx.kind == gone) {
+                    // Only the arms that work, gather and drink; a cable or a pointer has its own time.
+                    if (fx.kind == gone && (gone != HostNetworking.FX_TENDRIL || fx.slot <= HostNetworking.SLOT_DRAIN)) {
                         fx.life = Math.min(fx.life, 2);
                     }
                 }
@@ -260,8 +265,12 @@ public final class VoltaFx {
             ACTIVE.removeIf(fx -> fx.kind == kind);
         }
 
-        if (kind == HostNetworking.FX_STRING) {
-            ACTIVE.removeIf(fx -> fx.kind == kind && fx.entityId == entityId);
+        if (kind == HostNetworking.FX_STRING || kind == HostNetworking.FX_TAG) {
+            ACTIVE.removeIf(fx -> fx.kind == kind && fx.entityId == entityId && (kind != HostNetworking.FX_TAG || fx.slot == slot));
+        }
+
+        if (kind == HostNetworking.FX_STAMP) {
+            ACTIVE.removeIf(fx -> fx.kind == kind && fx.slot == slot);
         }
 
         Fx fx = new Fx(kind, slot, casterId, entityId, pos, source, color, ticks);
@@ -285,6 +294,60 @@ public final class VoltaFx {
         } else if (kind == HostNetworking.FX_SELF) {
             glitch = Math.max(glitch, 0.6F);
         }
+    }
+
+    /** An effect started on this side, for the Host's own eyes: Volta's pranks have hands too. */
+    private static Fx local(int kind, int slot, Vec3d pos, int color, int ticks, String say) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) {
+            return null;
+        }
+
+        Fx fx = new Fx(kind, slot, client.player.getId(), -3, pos, pos, color, ticks);
+        fx.screen = true;
+        fx.say = say;
+        if (kind == HostNetworking.FX_TENDRIL) {
+            fx.punch = -2;
+        }
+
+        ACTIVE.removeIf(old -> old.kind == kind && old.slot == slot && old.screen);
+        ACTIVE.add(fx);
+        return fx;
+    }
+
+    /** What her hands do while she plays a prank. */
+    public static void prank(com.windykindy49.windyorigins.host.HostPrank prank) {
+        Vec3d hotbar = new Vec3d(0.5, 0.955, 0.0);
+        switch (prank) {
+            case SLOT -> local(HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POKE, hotbar, CYAN, 12, "OOPS");
+            case SHUFFLE -> local(HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POKE, hotbar, MAGENTA, 12, "SHUFFLE");
+            case DROP -> local(HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POKE, new Vec3d(0.8, 0.8, 0.0), CYAN, 12, "YOINK!");
+            case SHOVE -> local(HostNetworking.FX_STAMP, HostNetworking.STAMP_PALM, Vec3d.ZERO, MAGENTA, 8, "SHOVE!");
+            case JUMP -> local(HostNetworking.FX_STAMP, HostNetworking.STAMP_PALM, Vec3d.ZERO, CYAN, 8, "HUP!");
+            case BLACKOUT -> local(HostNetworking.FX_STAMP, HostNetworking.STAMP_HANDS, Vec3d.ZERO, CYAN, 14, "GUESS WHO");
+            case RUBBERBAND -> {
+                Fx fx = local(HostNetworking.FX_RUSH, 1, Vec3d.ZERO, CYAN, 7, null);
+                if (fx != null) {
+                    glitch = 1.0F;
+                    kick = 1.0F;
+                }
+            }
+            case WHISTLE -> {
+                word("FWEEEET!", (float)screenW * 0.5F, (float)screenH * 0.35F, 0xFFFFFF, 12);
+                glitch = 1.0F;
+            }
+            case SPIN -> {
+                word("WHEEE", (float)screenW * 0.5F, (float)screenH * 0.35F, MAGENTA, 8);
+                local(HostNetworking.FX_RUSH, 0, Vec3d.ZERO, MAGENTA, 6, null);
+            }
+            default -> {
+            }
+        }
+    }
+
+    /** Where an arm ends, in screen pixels; the third value is 0 when that place is behind the camera. */
+    private static float[] tipOf(Fx fx, MinecraftClient client) {
+        return fx.screen ? new float[]{(float)fx.pos.x * (float)screenW, (float)fx.pos.y * (float)screenH, 1.0F} : project(current(fx, client));
     }
 
     private static boolean own(MinecraftClient client, int casterId) {
@@ -358,6 +421,14 @@ public final class VoltaFx {
             fx.age++;
             fx.life--;
             fx.punch++;
+            if (fx.kind == HostNetworking.FX_TENDRIL && fx.entityId >= 0 && !fx.screen) {
+                // An arm has nothing to hold once its quarry is gone.
+                Entity held = client.world.getEntityById(fx.entityId);
+                if (held == null || !held.isAlive()) {
+                    fx.life = Math.min(fx.life, 3);
+                }
+            }
+
             if (fx.kind == HostNetworking.FX_BOLT) {
                 if (fx.age == fx.launch()) {
                     kick = 1.0F;
@@ -398,43 +469,81 @@ public final class VoltaFx {
                 }
             } else if (fx.kind == HostNetworking.FX_RUSH && fx.age == 1) {
                 play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_1, 0.5F, fx.slot == 0 ? 2.0F : 0.6F);
-            } else if (fx.kind == HostNetworking.FX_TENDRIL && fx.slot == HostNetworking.SLOT_POINT) {
+            } else if (fx.kind == HostNetworking.FX_TAG) {
+                Entity marked = fx.entityId >= 0 ? client.world.getEntityById(fx.entityId) : null;
+                if (marked == null || !marked.isAlive()) {
+                    fx.life = Math.min(fx.life, 3);
+                }
+            } else if (fx.kind == HostNetworking.FX_STAMP) {
+                tickStamp(client, fx);
+            } else if (fx.kind == HostNetworking.FX_TENDRIL && (fx.slot == HostNetworking.SLOT_POINT || fx.slot >= HostNetworking.SLOT_TRACE)) {
                 // It only points; nothing is struck.
                 fx.punch = 99;
                 if (fx.age == 2) {
-                    float[] at = project(current(fx, client));
-                    if (at[2] != 0.0F) {
-                        word("THERE!", MathHelper.clamp(at[0], 60.0F, (float)screenW - 60.0F), MathHelper.clamp(at[1] - 30.0F * scale(), 30.0F, (float)screenH - 30.0F), 0xFFFFFF, 10);
-                    }
+                    float[] at = tipOf(fx, client);
+                    if (fx.slot == HostNetworking.SLOT_POINT) {
+                        if (at[2] != 0.0F) {
+                            word("THERE!", MathHelper.clamp(at[0], 60.0F, (float)screenW - 60.0F), MathHelper.clamp(at[1] - 30.0F * scale(), 30.0F, (float)screenH - 30.0F), 0xFFFFFF, 10);
+                        }
 
-                    play(client, SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), 0.6F, 1.8F);
+                        play(client, SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), 0.6F, 1.8F);
+                    } else {
+                        splash(at[0], at[1], 4, fx.color, 0.6F);
+                        play(client, SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), 0.3F, 1.2F + 0.1F * (float)(fx.slot - HostNetworking.SLOT_TRACE));
+                    }
                 }
-            } else if (fx.kind == HostNetworking.FX_TENDRIL && fx.slot >= HostNetworking.SLOT_SHOVE && fx.slot <= HostNetworking.SLOT_POKE) {
-                boolean poke = fx.slot == HostNetworking.SLOT_POKE;
-                if (!poke && fx.age == 6) {
-                    // The grip was only the wind-up: this is the throw.
+            } else if (fx.kind == HostNetworking.FX_TENDRIL && fx.slot >= HostNetworking.SLOT_SHOVE && fx.slot <= HostNetworking.SLOT_CABLE) {
+                int slot = fx.slot;
+                boolean heavy = slot == HostNetworking.SLOT_SHOVE || slot == HostNetworking.SLOT_YANK;
+                boolean staged = heavy || slot == HostNetworking.SLOT_INJECT || slot == HostNetworking.SLOT_SLAP;
+                if (staged && fx.age == 6) {
+                    // The first touch was only the wind-up: this is the throw, the plunger, the slap.
                     fx.punch = 0;
                 }
 
-                if (fx.punch == 0) {
-                    float[] at = project(current(fx, client));
-                    boolean throwing = !poke && fx.age >= 6;
-                    splash(at[0], at[1], throwing ? 20 : 9, fx.color, throwing ? 1.6F : 1.0F);
-                    kick = Math.max(kick, throwing ? 1.0F : 0.5F);
-                    glitch = Math.max(glitch, throwing ? 1.0F : 0.6F);
-                    if (poke) {
-                        word("CLICK", at[0], at[1] - 22.0F * scale(), 0xFFFFFF, 6);
-                        play(client, SoundEvents.BLOCK_STONE_BUTTON_CLICK_ON, 0.7F, 1.6F);
-                    } else if (throwing) {
-                        word(fx.slot == HostNetworking.SLOT_YANK ? "C'MERE!" : "YEET!", at[0], at[1] - 34.0F * scale(), 0xFFFFFF, 9);
+                if (fx.punch == 0 && slot == HostNetworking.SLOT_CABLE) {
+                    // A pulse down the cable.
+                    for (int i = 0; i < 4; i++) {
+                        PELLETS.add(new Pellet(slot, 0.0F, 0.2F + (float)Math.random() * 0.12F, (float)(Math.random() - 0.5) * 0.3F, i % 2 == 0 ? 0xFFFFFF : fx.color));
+                    }
+
+                    glitch = Math.max(glitch, 0.35F);
+                } else if (fx.punch == 0) {
+                    float[] at = tipOf(fx, client);
+                    boolean second = staged && fx.age >= 6;
+                    splash(at[0], at[1], second ? 20 : 9, fx.color, second ? 1.6F : 1.0F);
+                    kick = Math.max(kick, second && heavy ? 1.0F : 0.55F);
+                    glitch = Math.max(glitch, second ? 1.0F : 0.6F);
+                    String said = fx.say;
+                    if (said == null) {
+                        said = switch (slot) {
+                            case HostNetworking.SLOT_POKE -> "CLICK";
+                            case HostNetworking.SLOT_SHOVE -> second ? "YEET!" : "GRAB";
+                            case HostNetworking.SLOT_YANK -> second ? "C'MERE!" : "GRAB";
+                            case HostNetworking.SLOT_INJECT -> second ? null : "JAB";
+                            case HostNetworking.SLOT_PLANT -> "PLOP";
+                            default -> null;
+                        };
+                    }
+
+                    if (said != null) {
+                        word(said, MathHelper.clamp(at[0], 50.0F, (float)screenW - 50.0F), at[1] - (second ? 34.0F : 22.0F) * scale(), 0xFFFFFF, second ? 9 : 6);
+                    }
+
+                    if (second && heavy) {
                         impactTicks = 3;
                         impactX = at[0];
                         impactY = at[1];
                         impactColor = fx.color;
                         play(client, SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK, 0.8F, 0.7F);
                         play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_3, 0.4F, 1.6F);
+                    } else if (slot == HostNetworking.SLOT_POKE) {
+                        play(client, SoundEvents.BLOCK_STONE_BUTTON_CLICK_ON, 0.7F, 1.6F);
+                    } else if (slot == HostNetworking.SLOT_INJECT) {
+                        play(client, second ? SoundEvents.ITEM_HONEY_BOTTLE_DRINK : SoundEvents.ENTITY_BEE_STING, 0.7F, second ? 1.6F : 1.4F);
+                    } else if (slot == HostNetworking.SLOT_SLAP && second) {
+                        play(client, SoundEvents.ENTITY_PLAYER_ATTACK_WEAK, 0.9F, 0.6F);
                     } else {
-                        word("GRAB", at[0], at[1] - 22.0F * scale(), 0xFFFFFF, 5);
                         play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.6F, 1.2F);
                     }
                 }
@@ -446,11 +555,11 @@ public final class VoltaFx {
 
                 if (fx.punch == 0) {
                     // The grip lands: rubble in the block's own colour is hauled back up the arm.
-                    Vec3d target = current(fx, client);
-                    float[] at = project(target);
+                    Vec3d target = fx.screen ? client.player.getPos() : current(fx, client);
+                    float[] at = tipOf(fx, client);
                     BlockPos block = BlockPos.ofFloored(target);
                     BlockState state = client.world.getBlockState(block);
-                    boolean empty = state.isAir();
+                    boolean empty = fx.screen || state.isAir();
                     int rubble = empty ? fx.color : state.getMapColor(client.world, block).color;
                     if (rubble == 0) {
                         rubble = 0x9A9A9A;
@@ -533,6 +642,71 @@ public final class VoltaFx {
     }
 
     private static final int GOLD = 0xFFD24A;
+
+    /** The pieces drawn on the screen itself: what each one does on the tick it lands. */
+    private static void tickStamp(MinecraftClient client, Fx fx) {
+        float sc = scale();
+        float cx = (float)screenW * 0.5F;
+        if (fx.age == 1 && fx.say != null) {
+            word(fx.say, cx, (float)screenH * 0.3F, 0xFFFFFF, 9);
+        }
+
+        switch (fx.slot) {
+            case HostNetworking.STAMP_PALM -> {
+                if (fx.age == 2) {
+                    impactTicks = 3;
+                    impactX = cx;
+                    impactY = (float)screenH * 0.6F;
+                    impactColor = fx.color;
+                    kick = 1.0F;
+                    glitch = 1.0F;
+                    splash(cx, (float)screenH * 0.55F, 24, fx.color, 1.8F);
+                    play(client, SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK, 0.9F, 0.6F);
+                }
+            }
+            case HostNetworking.STAMP_CLOCK -> {
+                if (fx.age % 5 == 1) {
+                    play(client, SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), 0.35F, 0.6F);
+                }
+            }
+            case HostNetworking.STAMP_MEND -> {
+                if (fx.age % 4 == 1 && fx.life > 6) {
+                    PELLETS.add(new Pellet(SLOT_HAUL + 1, 0.0F, 0.16F, (float)(Math.random() - 0.5) * 0.4F, Math.random() < 0.5 ? 0xFFFFFF : fx.color));
+                    PELLETS.add(new Pellet(SLOT_HAUL + 2, 0.0F, 0.16F, (float)(Math.random() - 0.5) * 0.4F, Math.random() < 0.5 ? 0xFFFFFF : fx.color));
+                }
+
+                if (fx.age == 3) {
+                    play(client, SoundEvents.ENTITY_SLIME_SQUISH_SMALL, 0.6F, 1.6F);
+                }
+            }
+            case HostNetworking.STAMP_EYES -> {
+                if (fx.age == 1) {
+                    glitch = Math.max(glitch, 0.8F);
+                    play(client, SoundEvents.BLOCK_BEACON_POWER_SELECT, 0.5F, 2.0F);
+                }
+            }
+            case HostNetworking.STAMP_CRACK -> {
+                if (fx.age == 1) {
+                    impactTicks = 3;
+                    impactX = (float)screenW * 0.82F;
+                    impactY = (float)screenH * 0.2F;
+                    impactColor = 0xFFFFFF;
+                    kick = 1.0F;
+                    glitch = 1.0F;
+                    word("CRACK!", (float)screenW * 0.7F, (float)screenH * 0.32F, 0xFFFFFF, 12);
+                    splash(impactX, impactY, 30, 0xFFFFFF, 2.0F);
+                }
+            }
+            case HostNetworking.STAMP_HANDS -> {
+                if (fx.age == 3) {
+                    kick = Math.max(kick, 0.7F);
+                    play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.8F, 0.7F);
+                }
+            }
+            default -> {
+            }
+        }
+    }
 
     /** Where the effect currently points: it follows its target entity while that still exists. */
     private static Vec3d current(Fx fx, MinecraftClient client) {
@@ -977,6 +1151,8 @@ public final class VoltaFx {
                 case HostNetworking.FX_SWAP -> swap(client, fx, now, beat, width, height);
                 case HostNetworking.FX_STRING -> strings(client, fx, now, beat);
                 case HostNetworking.FX_RUSH -> rush(fx, now, width, height);
+                case HostNetworking.FX_TAG -> tag(client, fx, now, beat);
+                case HostNetworking.FX_STAMP -> stamp(fx, now, beat, width, height);
                 case HostNetworking.FX_BOLT -> shot(client, fx, now, beat, width, height);
                 default -> {
                 }
@@ -1132,31 +1308,59 @@ public final class VoltaFx {
     /** The arm of mass that comes out of the edge of the screen and grips its work. */
     private static void arm(MinecraftClient client, Fx fx, int now, int beat, int width, int height) {
         float sc = scale();
-        boolean drain = fx.slot == HostNetworking.SLOT_DRAIN;
-        boolean point = fx.slot == HostNetworking.SLOT_POINT;
-        boolean heavy = fx.slot == HostNetworking.SLOT_SHOVE || fx.slot == HostNetworking.SLOT_YANK;
+        int slot = fx.slot;
+        boolean drain = slot == HostNetworking.SLOT_DRAIN;
+        boolean point = slot == HostNetworking.SLOT_POINT;
+        boolean trace = slot >= HostNetworking.SLOT_TRACE;
+        boolean cable = slot == HostNetworking.SLOT_CABLE;
+        boolean heavy = slot == HostNetworking.SLOT_SHOVE || slot == HostNetworking.SLOT_YANK;
         float ox = (float)width + 14.0F * sc;
-        float oy = (float)height * (drain ? 0.72F : 0.5F + 0.11F * (float)(fx.slot % 3));
+        float oy = (float)height * (drain ? 0.72F : 0.5F + 0.11F * (float)(slot % 3));
         float side = 1.0F;
         if (heavy) {
             // The big one comes up from under the picture, like a punch.
             ox = (float)width * 0.5F + (float)hash(fx.seed, 1, 1) * (float)width * 0.2F;
             oy = (float)height + 16.0F * sc;
             side = -0.5F;
+        } else if (slot == HostNetworking.SLOT_SLAP) {
+            // From the other side, so it does not look like every other arm.
+            ox = -14.0F * sc;
+            oy = (float)height * 0.42F;
+            side = -1.0F;
+        } else if (trace) {
+            // A fan of threads from under the middle of the picture.
+            ox = (float)width * 0.5F + ((float)(slot - HostNetworking.SLOT_TRACE) - 3.5F) * 26.0F * sc;
+            oy = (float)height + 8.0F * sc;
+            side = slot % 2 == 0 ? 0.4F : -0.4F;
+        } else if (cable) {
+            ox = (float)width * 0.86F;
+            oy = (float)height + 10.0F * sc;
+            side = -0.7F;
         }
 
-        float[] tip = project(current(fx, client));
+        float[] tip = tipOf(fx, client);
+        if (tip[2] == 0.0F && (trace || cable || point)) {
+            return;
+        }
+
         float reach = fx.age >= 100 ? 1.0F : Math.min(1.0F, (float)(fx.age + 1) / 2.0F);
         if (fx.life <= 2) {
             reach = Math.min(reach, (float)fx.life / 3.0F);
         }
 
-        if (reach <= 0.02F || point && fx.life < 8 && fx.life % 2 == 0) {
+        if (reach <= 0.02F || (point || trace) && fx.life < 8 && fx.life % 2 == 0) {
             return;
         }
 
-        float thick = point ? 0.4F : (heavy ? 1.4F : (fx.slot == HostNetworking.SLOT_POKE ? 0.7F : 1.0F));
-        chain(fx, ox, oy, tip[0], tip[1], reach, thick, drain || fx.slot == HostNetworking.SLOT_YANK ? 1.0F : -1.0F, now, beat, fx.color, 0, side);
+        float thick = point ? 0.4F
+            : trace ? 0.26F
+            : cable ? 0.3F
+            : heavy ? 1.4F
+            : slot == HostNetworking.SLOT_POKE ? 0.7F
+            : slot == HostNetworking.SLOT_INJECT ? 0.5F
+            : slot == HostNetworking.SLOT_SLAP ? 0.9F
+            : 1.0F;
+        chain(fx, ox, oy, tip[0], tip[1], reach, thick, drain || slot == HostNetworking.SLOT_YANK ? 1.0F : -1.0F, now, beat, fx.color, 0, side);
         int last = JOINTS - 1;
         if (point) {
             // No fist: a finger, and rings going out from what it points at.
@@ -1168,9 +1372,261 @@ public final class VoltaFx {
             return;
         }
 
+        if (trace) {
+            // A thread and a bracket snapped shut on what it found.
+            float open = (reach < 1.0F ? 16.0F : 9.0F) * sc;
+            float t = 1.5F * sc;
+            int tone = SOLID | (beat % 2 == 0 ? 0xFFFFFF : fx.color);
+
+            for (int sx = -1; sx <= 1; sx += 2) {
+                for (int sy = -1; sy <= 1; sy += 2) {
+                    float px = JX[last] + (float)sx * open;
+                    float py = JY[last] + (float)sy * open;
+                    box(Math.min(px, px - (float)sx * 5.0F * sc), py - t, Math.max(px, px - (float)sx * 5.0F * sc), py + t, tone);
+                    box(px - t, Math.min(py, py - (float)sy * 5.0F * sc), px + t, Math.max(py, py - (float)sy * 5.0F * sc), tone);
+                }
+            }
+
+            return;
+        }
+
+        if (cable) {
+            // The plug, with a spark on the tick a pulse goes through.
+            if (fx.punch >= 0 && fx.punch <= 1) {
+                spike(JX[last], JY[last], 20.0F * sc, 6.0F * sc, 6, (float)now, SOLID | 0xFFFFFF);
+            }
+
+            blob(JX[last], JY[last], 5.0F * sc, fx.color);
+            pellets(slot, reach);
+            return;
+        }
+
         int hit = fx.punch >= 0 && fx.punch <= 1 && reach >= 1.0F ? fx.punch : 2;
+        if (slot == HostNetworking.SLOT_INJECT) {
+            // A needle instead of a fist; the barrel behind it empties after the plunger goes in.
+            float heading = (float)Math.atan2((double)(JY[last] - JY[last - 2]), (double)(JX[last] - JX[last - 2]));
+            float nx = (float)Math.cos((double)heading);
+            float ny = (float)Math.sin((double)heading);
+            boolean pushed = fx.age >= 6;
+            float barrel = (pushed ? 8.0F : 13.0F) * sc;
+            if (hit <= 1) {
+                spike(JX[last], JY[last], 26.0F * sc, 8.0F * sc, 8, (float)now * 0.9F, SOLID | 0xFFFFFF);
+            }
+
+            limb(JX[last] - nx * 34.0F * sc, JY[last] - ny * 34.0F * sc, barrel, JX[last] - nx * 12.0F * sc, JY[last] - ny * 12.0F * sc, barrel, pushed ? 0xFFFFFF : fx.color);
+            stroke(JX[last] - nx * 12.0F * sc, JY[last] - ny * 12.0F * sc, JX[last] + nx * 10.0F * sc, JY[last] + ny * 10.0F * sc, 1.6F * sc, SOLID | 0xFFFFFF);
+            return;
+        }
+
         fist(fx, 15.0F * sc * thick * Math.min(1.0F, reach * 1.2F), hit, fx.color, now, beat);
-        pellets(fx.slot, reach);
+        pellets(slot, reach);
+    }
+
+    /** A mark pinned on a creature for as long as something of hers is at work in it. */
+    private static void tag(MinecraftClient client, Fx fx, int now, int beat) {
+        Entity entity = fx.entityId >= 0 && client.world != null ? client.world.getEntityById(fx.entityId) : null;
+        if (entity == null || fx.life < 8 && fx.life % 2 == 0 || fx.age < 1) {
+            return;
+        }
+
+        boolean blindfold = fx.slot == HostNetworking.TAG_BLINDFOLD;
+        Vec3d where = entity.getPos().add(0.0, (double)entity.getHeight() * (blindfold ? 0.86 : 1.0) + (blindfold ? 0.0 : 0.5), 0.0);
+        float[] at = project(where);
+        if (at[2] == 0.0F) {
+            return;
+        }
+
+        float sc = scale();
+        double distance = Math.max(1.5, Math.sqrt(where.squaredDistanceTo(cameraPos)));
+        float focal = (float)screenH / 1.4F;
+        float u = MathHelper.clamp((float)((double)entity.getWidth() * 0.62 * (double)focal / distance), 5.0F * sc, 70.0F * sc);
+        float x = at[0];
+        float y = at[1];
+        if (blindfold) {
+            // A band across the eyes with two crosses on it, and the ends of the knot flapping.
+            float slip = beat % 5 == 0 ? (float)cell : 0.0F;
+            float half = Math.max(u * 0.32F, 2.0F * sc);
+            box(x - u + slip, y - half, x + u + slip, y + half, SOLID | INK);
+            float d = Math.max(half * 0.6F, 1.5F * sc);
+
+            for (int eye = -1; eye <= 1; eye += 2) {
+                float ex = x + (float)eye * u * 0.45F + slip;
+                stroke(ex - d, y - d, ex + d, y + d, Math.max(1.0F, d * 0.35F), BARE | 0xFFFFFF);
+                stroke(ex - d, y + d, ex + d, y - d, Math.max(1.0F, d * 0.35F), BARE | 0xFFFFFF);
+            }
+
+            float flap = (float)hash(fx.seed, beat, 1) * u * 0.5F;
+            stroke(x + u, y, x + u * 1.5F, y + u * 0.5F + flap, Math.max(1.2F, half * 0.5F), SOLID | INK);
+            stroke(x + u, y, x + u * 1.35F, y + u * 0.9F - flap, Math.max(1.2F, half * 0.5F), SOLID | INK);
+            return;
+        }
+
+        // The germ: a spiked knot of the mass riding above its carrier, dripping into it.
+        float r = Math.max(u * 0.5F, 4.0F * sc) * (beat % 2 == 0 ? 1.0F : 1.18F);
+        float fall = (float)Math.floorMod(now, 8) / 8.0F;
+        blob(x + (float)hash(fx.seed, now / 8, 2) * r, y + r + fall * u * 1.2F, Math.max(1.5F, r * 0.28F), fx.color);
+        spike(x, y, r * 2.0F, r * 0.9F, 7, (float)beat * 0.45F, SOLID | fx.color);
+        blob(x, y, r, fx.color);
+        float eye = Math.max((float)cell * 0.5F, r * 0.2F);
+        box(x - r * 0.45F - eye, y - eye, x - r * 0.45F + eye, y + eye, BARE | INK);
+        box(x + r * 0.45F - eye, y - eye, x + r * 0.45F + eye, y + eye, BARE | INK);
+    }
+
+    /** The pieces drawn on the Host's own screen. */
+    private static void stamp(Fx fx, int now, int beat, int width, int height) {
+        float sc = scale();
+        float cx = (float)width * 0.5F;
+        boolean fading = fx.life < 6 && fx.life % 2 == 0;
+        switch (fx.slot) {
+            case HostNetworking.STAMP_PALM -> {
+                // An open hand thrown up from under the picture: the thing that stops a blow, or deals one.
+                float rise = Math.min(1.0F, (float)(fx.age + 1) / 2.0F) * Math.min(1.0F, (float)fx.life / 2.0F);
+                float py = (float)height * (1.25F - 0.6F * rise) + (beat % 2 == 0 ? 0.0F : 4.0F * sc);
+                float palm = (float)height * 0.2F * (fx.age == 2 ? 1.25F : 1.0F);
+                if (fx.age >= 2 && fx.age <= 3) {
+                    spike(cx, py - palm * 0.3F, palm * 3.2F, palm * 1.2F, 11, (float)now * 0.7F, SOLID | 0xFFFFFF);
+                }
+
+                for (int f = 0; f < 4; f++) {
+                    float lean = ((float)f - 1.5F) * 0.26F + (float)hash(fx.seed, f, beat) * 0.05F;
+                    float length = palm * (f == 1 || f == 2 ? 1.75F : 1.45F);
+                    float bx = cx + ((float)f - 1.5F) * palm * 0.48F;
+                    limb(bx, py - palm * 0.5F, palm * 0.27F, bx + (float)Math.sin((double)lean) * length, py - palm * 0.5F - (float)Math.cos((double)lean) * length, palm * 0.22F, fx.color);
+                }
+
+                limb(cx - palm * 0.8F, py + palm * 0.1F, palm * 0.3F, cx - palm * 1.5F, py - palm * 0.6F, palm * 0.23F, fx.color);
+                blob(cx, py, palm, fx.color);
+                // The wrist runs off the bottom of the screen.
+                limb(cx, py + palm * 0.6F, palm * 0.7F, cx + (float)hash(fx.seed, 3, 3) * palm, (float)height + palm, palm * 0.6F, fx.color);
+            }
+            case HostNetworking.STAMP_CLOCK -> {
+                if (fading) {
+                    return;
+                }
+
+                // A stopwatch nailed to the top of the picture, its hand dragging and now and then slipping back.
+                float x = cx;
+                float y = 44.0F * sc;
+                float r = 30.0F * sc * Math.min(1.0F, (float)(fx.age + 1) / 3.0F);
+                blob(x - r * 0.75F, y - r * 0.95F, r * 0.24F, fx.color);
+                blob(x + r * 0.75F, y - r * 0.95F, r * 0.24F, fx.color);
+                hoop(x, y, r, 1.0F, 5.0F * sc, SOLID | fx.color);
+
+                for (int m = 0; m < 4; m++) {
+                    double a = (double)m * Math.PI * 0.5;
+                    box(x + (float)Math.cos(a) * r * 0.62F - (float)cell * 0.5F, y + (float)Math.sin(a) * r * 0.62F - (float)cell * 0.5F, x + (float)Math.cos(a) * r * 0.62F + (float)cell * 0.5F, y + (float)Math.sin(a) * r * 0.62F + (float)cell * 0.5F, BARE | 0xFFFFFF);
+                }
+
+                int step = fx.age / 5 - (hash(fx.seed, fx.age / 5, 4) > 0.3 ? 1 : 0);
+                double hand = (double)step * Math.PI / 6.0 - Math.PI * 0.5;
+                stroke(x, y, x + (float)Math.cos(hand) * r * 0.7F, y + (float)Math.sin(hand) * r * 0.7F, 2.6F * sc, SOLID | 0xFFFFFF);
+                stroke(x, y, x + r * 0.34F, y + r * 0.18F, 2.6F * sc, SOLID | MAGENTA);
+                blob(x, y, 3.5F * sc, fx.color);
+            }
+            case HostNetworking.STAMP_MEND -> {
+                // Two thin arms come in from the sides and feed the hearts; crosses float up off them.
+                float reach = Math.min(Math.min(1.0F, (float)(fx.age + 1) / 3.0F), Math.min(1.0F, (float)fx.life / 4.0F));
+                if (reach <= 0.02F) {
+                    return;
+                }
+
+                float hy = (float)height - 34.0F;
+                float left = cx - 91.0F;
+                float right = cx - 10.0F;
+                chain(fx, -14.0F * sc, (float)height * 0.7F, left, hy, reach, 0.45F, -1.0F, now, beat, fx.color, 1, -0.6F);
+                blob(JX[JOINTS - 1], JY[JOINTS - 1], 6.0F * sc, fx.color);
+                pellets(SLOT_HAUL + 1, reach);
+                chain(fx, (float)width + 14.0F * sc, (float)height * 0.7F, right, hy, reach, 0.45F, -1.0F, now, beat, fx.color, 2, 0.6F);
+                blob(JX[JOINTS - 1], JY[JOINTS - 1], 6.0F * sc, fx.color);
+                pellets(SLOT_HAUL + 2, reach);
+
+                for (int k = 0; k < 4; k++) {
+                    float up = (float)Math.floorMod(now * 2 + k * 9, 28);
+                    float px = left + (float)(hash(fx.seed, k, now / 14) + 0.5) * (right - left);
+                    float py = hy - 10.0F - up * 1.6F * sc;
+                    float arm = 4.0F * sc;
+                    box(px - arm, py - (float)cell * 0.5F, px + arm, py + (float)cell * 0.5F, SOLID | (k % 2 == 0 ? 0xFFFFFF : fx.color));
+                    box(px - (float)cell * 0.5F, py - arm, px + (float)cell * 0.5F, py + arm, SOLID | (k % 2 == 0 ? 0xFFFFFF : fx.color));
+                }
+            }
+            case HostNetworking.STAMP_EYES -> {
+                if (fading) {
+                    return;
+                }
+
+                // Her eyes, lent: they open across the picture, blink once, and go.
+                float open = fx.age < 4 ? (float)fx.age / 4.0F : (fx.age == 9 || fx.age == 10 ? 0.15F : 1.0F);
+                float y = (float)height * 0.42F;
+                float w = 46.0F * sc;
+                float h = 26.0F * sc * open;
+                if (h < 2.0F) {
+                    h = 2.0F;
+                }
+
+                for (int eye = -1; eye <= 1; eye += 2) {
+                    float x = cx + (float)eye * 78.0F * sc;
+                    limb(x - w, y, h, x + w, y, h, 0xFFFFFF);
+                    if (open > 0.3F) {
+                        float look = (float)hash(fx.seed, beat / 2, 6) * 14.0F * sc;
+                        blob(x + look, y, Math.min(h * 0.82F, 19.0F * sc), MAGENTA);
+                        blob(x + look, y, Math.min(h * 0.4F, 8.0F * sc), INK);
+                        box(x + look - 9.0F * sc, y - 10.0F * sc, x + look - 4.0F * sc, y - 5.0F * sc, BARE | 0xFFFFFF);
+                    }
+
+                    // Lashes.
+                    stroke(x - w, y - h, x - w - 10.0F * sc, y - h - 10.0F * sc, 2.0F * sc, SOLID | INK);
+                    stroke(x + w, y - h, x + w + 10.0F * sc, y - h - 10.0F * sc, 2.0F * sc, SOLID | INK);
+                }
+            }
+            case HostNetworking.STAMP_CRACK -> {
+                if (fx.life < 5 && fx.life % 2 == 0) {
+                    return;
+                }
+
+                // The chip goes: cracks run out across the glass from the temple.
+                float x0 = (float)width * 0.82F;
+                float y0 = (float)height * 0.2F;
+                float grown = Math.min(1.0F, (float)(fx.age + 1) / 3.0F);
+
+                for (int k = 0; k < 7; k++) {
+                    double a = Math.PI * (0.35 + 0.16 * (double)k) + hash(fx.seed, k, 1) * 0.2;
+                    float length = (float)Math.max(width, height) * (0.25F + 0.45F * (float)(hash(fx.seed, k, 2) + 0.5)) * grown;
+                    float px = x0;
+                    float py = y0;
+
+                    for (int seg = 1; seg <= 5; seg++) {
+                        float t = (float)seg / 5.0F;
+                        float jag = (float)hash(fx.seed, k * 7 + seg, 3) * 26.0F * sc;
+                        float x = x0 + (float)Math.cos(a) * length * t - (float)Math.sin(a) * jag;
+                        float y = y0 + (float)Math.sin(a) * length * t + (float)Math.cos(a) * jag;
+                        stroke(px, py, x, y, (2.6F - 0.4F * (float)seg) * sc, SOLID | (k % 3 == 0 ? CYAN : 0xFFFFFF));
+                        px = x;
+                        py = y;
+                    }
+                }
+
+                spike(x0, y0, 34.0F * sc, 10.0F * sc, 9, (float)now * 0.5F, SOLID | 0xFFFFFF);
+            }
+            case HostNetworking.STAMP_HANDS -> {
+                // Two hands of the mass close over the Host's eyes from either side.
+                float close = fx.age < 3 ? (float)(fx.age + 1) / 3.0F : Math.min(1.0F, (float)fx.life / 3.0F);
+                float r = (float)height * 0.62F;
+                float y = (float)height * 0.5F + (beat % 2 == 0 ? 0.0F : 5.0F * sc);
+                float lx = -r + close * ((float)width * 0.5F + r * 0.35F) - r * 0.35F;
+                float rx = (float)width + r - close * ((float)width * 0.5F + r * 0.35F) + r * 0.35F;
+
+                for (int f = 0; f < 4; f++) {
+                    float fy = y + ((float)f - 1.5F) * r * 0.42F;
+                    limb(lx, fy, r * 0.24F, lx + r * 1.25F, fy + (float)hash(fx.seed, f, beat) * 8.0F * sc, r * 0.19F, fx.color);
+                    limb(rx, fy, r * 0.24F, rx - r * 1.25F, fy + (float)hash(fx.seed, f + 9, beat) * 8.0F * sc, r * 0.19F, MAGENTA);
+                }
+
+                blob(lx, y, r, fx.color);
+                blob(rx, y, r, MAGENTA);
+            }
+            default -> {
+            }
+        }
     }
 
     /** Fetching from a container: the arm takes hold of it, and the item itself comes back along the arm. */

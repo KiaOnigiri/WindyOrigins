@@ -261,6 +261,7 @@ public final class HostManager {
         var1.warpEnds = 0L;
         var1.shieldEnds = 0L;
         HostNetworking.fx(var0, HostNetworking.FX_STOP, 2, -1, var0.getPos(), 0, 0);
+        HostNetworking.fx(var0, HostNetworking.FX_STAMP, HostNetworking.STAMP_CRACK, -1, var0.getPos(), HostNetworking.CYAN, 16);
         PhaseFx.sound(var0, SoundEvents.BLOCK_GLASS_BREAK, SoundCategory.PLAYERS, 1.0F, 0.6F);
         PhaseFx.privateSound(var0, SoundEvents.BLOCK_BEACON_DEACTIVATE, 1.0F, 0.5F);
         hostFx(var0, ParticleTypes.ELECTRIC_SPARK, var0.getX(), var0.getEyeY(), var0.getZ(), 30, 0.3, 0.3, 0.3, 0.4);
@@ -279,6 +280,7 @@ public final class HostManager {
         PhaseFx.sound(var0, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 1.0F, 1.6F);
         PhaseFx.privateSound(var0, SoundEvents.BLOCK_ANVIL_USE, 0.5F, 1.8F);
         HostNetworking.fx(var0, HostNetworking.FX_SELF, 0, -1, var0.getPos(), HostNetworking.GREEN, 30);
+        HostNetworking.word(var0, HostNetworking.WORD_PATCHED, null, HostNetworking.GREEN);
         HostNetworking.say(var0, Text.translatable("message.windyorigins.volta.chip_fixed"), HostNetworking.SMILE);
         return true;
     }
@@ -553,6 +555,7 @@ public final class HostManager {
                 HostNetworking.fx(var0, HostNetworking.FX_SELF, 0, -1, var0.getPos(), HostNetworking.GREEN, 40);
                 PhaseFx.sound(var0, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS, 0.9F, 1.3F);
                 HostNetworking.word(var0, HostNetworking.WORD_PATCHED, null, HostNetworking.GREEN);
+                HostNetworking.fx(var0, HostNetworking.FX_STAMP, HostNetworking.STAMP_MEND, -1, var0.getPos(), HostNetworking.GREEN, 34);
                 say(var0, "repair", 0);
                 cast(var0, 2);
                 return 0;
@@ -581,6 +584,13 @@ public final class HostManager {
                 HostNetworking.marks(var0, var6.stream().mapToInt(Entity::getId).toArray(), 240);
                 HostNetworking.fx(var0, HostNetworking.FX_PULSE, 0, -1, var0.getPos(), HostNetworking.CYAN, 30);
                 HostNetworking.word(var0, HostNetworking.WORD_PING, null, HostNetworking.CYAN);
+                var6.sort(java.util.Comparator.comparingDouble(var1x -> var1x.squaredDistanceTo(var0)));
+
+                for (int var20 = 0; var20 < Math.min(8, var6.size()); var20++) {
+                    LivingEntity var21 = var6.get(var20);
+                    HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_TRACE + var20, var21.getId(), chest(var21), var21 instanceof PlayerEntity ? HostNetworking.PINK : HostNetworking.CYAN, 22);
+                }
+
                 PhaseFx.privateSound(var0, SoundEvents.BLOCK_BEACON_ACTIVATE, 0.5F, 1.8F);
                 if (var6.isEmpty()) {
                     say(var0, "detect_none", 0);
@@ -710,6 +720,18 @@ public final class HostManager {
         } else if (var1 == HostCommand.IMPULSE) {
             // A fist from under the picture: it takes hold first and throws after.
             HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, yank ? HostNetworking.SLOT_YANK : HostNetworking.SLOT_SHOVE, var2.getId(), chest(var2), HostNetworking.CYAN, yank ? 14 : 10);
+        } else if (var1 == HostCommand.VIRUS) {
+            // A needle on a thin arm: in on the second tick, the plunger on the sixth.
+            HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_INJECT, var2.getId(), chest(var2), HostNetworking.PINK, 12);
+        } else if (var1 == HostCommand.BLIND) {
+            // An arm from the left claps a blindfold over its eyes.
+            HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_SLAP, var2.getId(), var2.getEyePos(), HostNetworking.CYAN, 11);
+        } else if (var1 == HostCommand.PUPPET) {
+            // The strings come down first; by the time they are taut it is hers.
+            HostNetworking.fx(var0, HostNetworking.FX_STRING, 3, var2.getId(), chest(var2), HostNetworking.PINK, 300 + BOLT_TICKS);
+        } else if (var1 == HostCommand.SIPHON) {
+            // The drinking arm latches on straight away and starts to pull when the hold is good.
+            HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_DRAIN, var2.getId(), chest(var2), HostNetworking.GREEN, SIPHON_TICKS + BOLT_TICKS);
         } else {
             HostNetworking.fx(var0, HostNetworking.FX_BOLT, 0, var2.getId(), chest(var2), var4, BOLT_TICKS);
         }
@@ -757,6 +779,7 @@ public final class HostManager {
                     break;
                 case BLIND:
                     HostNetworking.word(var0, HostNetworking.WORD_LIGHTS_OUT, var4x, 0xFFFFFF);
+                    HostNetworking.fx(var0, HostNetworking.FX_TAG, HostNetworking.TAG_BLINDFOLD, var2.getId(), var4x, HostNetworking.CYAN, 120);
                     var2.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 120, 0), var0);
                     if (var2 instanceof MobEntity var8) {
                         var8.setTarget(null);
@@ -783,7 +806,6 @@ public final class HostManager {
                     HostManager.State drain = state(var0);
                     drain.siphon = var2.getUuid();
                     drain.siphonEnds = var0.getWorld().getTime() + (long)SIPHON_TICKS;
-                    HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_DRAIN, var2.getId(), var4x, HostNetworking.GREEN, SIPHON_TICKS);
                     HostNetworking.word(var0, HostNetworking.WORD_SLURP, var4x, HostNetworking.GREEN);
                     say(var0, "siphon", 1);
                     break;
@@ -807,8 +829,6 @@ public final class HostManager {
                     TURNED.put(var2.getUuid(), var0.getWorld().getTime() + 300L);
                     TURNED_OWNER.put(var2.getUuid(), var0.getUuid());
                     ((MobEntity)var2).setTarget(null);
-                    // Strings from the top of the screen for as long as it dances.
-                    HostNetworking.fx(var0, HostNetworking.FX_STRING, 3, var2.getId(), chest(var2), HostNetworking.PINK, 300);
                     HostNetworking.word(var0, HostNetworking.WORD_MINE, var4x, HostNetworking.PINK);
                     say(var0, "puppet", 1);
                     break;
@@ -829,6 +849,7 @@ public final class HostManager {
     private static void infect(ServerPlayerEntity var0, LivingEntity var1, int var2) {
         long var3 = var1.getWorld().getTime();
         VIRUS.put(var1.getUuid(), new HostManager.Infection(var0.getUuid(), var1.getWorld().getRegistryKey(), var3 + 160L, var3 + 60L, var2));
+        HostNetworking.fx(var0, HostNetworking.FX_TAG, HostNetworking.TAG_VIRUS, var1.getId(), chest(var1), HostNetworking.PINK, 160);
     }
 
     /** The virus gnaws at its carrier and, once ripe or orphaned, leaps to the next creature. */
@@ -914,6 +935,7 @@ public final class HostManager {
         HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, host.getPos(), HostNetworking.GOLD, 16);
         HostNetworking.fx(host, HostNetworking.FX_SELF, 0, -1, host.getPos(), HostNetworking.GOLD, WARP_TICKS);
         HostNetworking.word(host, HostNetworking.WORD_SLOW, null, HostNetworking.GOLD);
+        HostNetworking.fx(host, HostNetworking.FX_STAMP, HostNetworking.STAMP_CLOCK, -1, host.getPos(), HostNetworking.GOLD, WARP_TICKS);
         PhaseFx.sound(host, SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.PLAYERS, 0.9F, 0.6F);
         say(host, "timewarp", 6);
         cast(host, 6);
@@ -979,7 +1001,8 @@ public final class HostManager {
         HostManager.State st = state(host);
         st.turret = pos;
         st.turretEnds = host.getWorld().getTime() + (long)TURRET_TICKS;
-        HostNetworking.fx(host, HostNetworking.FX_BOLT, 1, -1, pos, HostNetworking.CYAN, 6);
+        HostNetworking.fx(host, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_PLANT, -1, pos, HostNetworking.CYAN, 9);
+        HostNetworking.fx(host, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_CABLE, -1, pos, HostNetworking.CYAN, TURRET_TICKS);
         HostNetworking.fx(host, HostNetworking.FX_NODE, 0, -1, pos, HostNetworking.CYAN, TURRET_TICKS);
         HostNetworking.word(host, HostNetworking.WORD_ONLINE, pos, HostNetworking.CYAN);
         PhaseFx.privateSound(host, SoundEvents.BLOCK_BEACON_POWER_SELECT, 0.7F, 1.9F);
@@ -1027,6 +1050,8 @@ public final class HostManager {
 
         if (best != null) {
             HostNetworking.arc(host, at, chest(best), HostNetworking.CYAN, 6);
+            // Each shot is fed down the cable from the screen.
+            HostNetworking.fx(host, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_CABLE, -1, at, HostNetworking.CYAN, (int)Math.max(2L, st.turretEnds - now));
             best.damage(host.getWorld().getDamageSources().indirectMagic(host, host), 3.0F);
             PhaseFx.sound(host, at.x, at.y, at.z, SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT, SoundCategory.PLAYERS, 0.3F, 2.0F);
         }
@@ -1047,6 +1072,7 @@ public final class HostManager {
         HostNetworking.fx(host, HostNetworking.FX_STOP, 1, -1, host.getPos(), 0, 0);
         HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, host.getPos(), HostNetworking.BLUE, 12);
         HostNetworking.word(host, HostNetworking.WORD_BLOCK, null, HostNetworking.BLUE);
+        HostNetworking.fx(host, HostNetworking.FX_STAMP, HostNetworking.STAMP_PALM, -1, host.getPos(), HostNetworking.BLUE, 8);
         PhaseFx.sound(host, SoundEvents.ITEM_SHIELD_BLOCK, SoundCategory.PLAYERS, 1.0F, 1.4F);
         if (source.getAttacker() instanceof LivingEntity attacker && attacker != host) {
             attacker.takeKnockback(1.2, host.getX() - attacker.getX(), host.getZ() - attacker.getZ());
@@ -1153,7 +1179,7 @@ public final class HostManager {
         var6.decoy = var4;
         var6.decoyEnds = var0.getWorld().getTime() + (long)DECOY_TICKS;
         HostNetworking.fx(var0, HostNetworking.FX_DECOY, 0, -1, var4, HostNetworking.CYAN, DECOY_TICKS);
-        HostNetworking.fx(var0, HostNetworking.FX_BOLT, 1, -1, var4.add(0.0, 1.0, 0.0), HostNetworking.CYAN, 6);
+        HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_PLANT, -1, var4.add(0.0, 1.0, 0.0), HostNetworking.CYAN, 9);
         HostNetworking.word(var0, HostNetworking.WORD_PSST, var4.add(0.0, 2.0, 0.0), HostNetworking.CYAN);
         PhaseFx.sound(var0, var4.x, var4.y, var4.z, SoundEvents.ENTITY_ILLUSIONER_MIRROR_MOVE, SoundCategory.PLAYERS, 1.0F, 1.3F);
         say(var0, "decoy", 5);
@@ -1482,6 +1508,7 @@ public final class HostManager {
             // No torches to place: she lends the Host her own eyes instead.
             var0.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 900, 0));
             HostNetworking.fx(var0, HostNetworking.FX_SELF, 0, -1, var0.getPos(), HostNetworking.GOLD, 20);
+            HostNetworking.fx(var0, HostNetworking.FX_STAMP, HostNetworking.STAMP_EYES, -1, var0.getPos(), HostNetworking.PINK, 18);
             say(var0, "no_torches", 2);
             return true;
         } else {
