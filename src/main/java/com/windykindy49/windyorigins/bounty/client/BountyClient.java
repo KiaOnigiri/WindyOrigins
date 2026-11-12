@@ -13,7 +13,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.Entity;
@@ -84,7 +84,7 @@ public final class BountyClient {
         });
         ClientPlayConnectionEvents.DISCONNECT.register((var0, var1) -> ClientBountyState.reset());
         ClientTickEvents.END_CLIENT_TICK.register(BountyClient::tick);
-        HudRenderCallback.EVENT.register(BountyClient::render);
+        HudRenderCallback.EVENT.register((matrices, delta) -> BountyClient.render(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
     }
 
     private static void tick(MinecraftClient var0) {
@@ -253,6 +253,7 @@ public final class BountyClient {
                 }
 
                 Sprite var23 = var1.getStatusEffectSpriteManager().getSprite(var22.getEffectType());
+                com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0, var23.getAtlasId());
                 var0.drawSprite(var29, var18, 0, 9, 9, var23);
                 var29 += 11;
             }

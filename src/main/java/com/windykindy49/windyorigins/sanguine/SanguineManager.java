@@ -365,7 +365,7 @@ public final class SanguineManager {
     }
 
     private static void tickSun(ServerPlayerEntity var0) {
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         BlockPos var2 = BlockPos.ofFloored(var0.getEyePos());
         boolean var3 = var1.isDay()
             && !var1.isRaining()
@@ -433,7 +433,7 @@ public final class SanguineManager {
         PhaseFx.sound(var0, WindySounds.BLOOD_BATS, SoundCategory.PLAYERS, 1.0F, 1.0F);
         PhaseFx.particles(var0, ParticleTypes.LARGE_SMOKE, var0.getX(), var0.getBodyY(0.5), var0.getZ(), 30, 0.4, 0.6, 0.4, 0.02);
         PhaseFx.particles(var0, BLOOD, var0.getX(), var0.getBodyY(0.5), var0.getZ(), 20, 0.4, 0.6, 0.4, 0.0);
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         Boolean var2 = SpawnPhaseOverride.push(PhaseFx.phase(var0));
 
         try {

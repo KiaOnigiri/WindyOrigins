@@ -985,7 +985,7 @@ public final class HostManager {
             return;
         }
 
-        Entity found = st.siphon == null ? null : host.getServerWorld().getEntity(st.siphon);
+        Entity found = st.siphon == null ? null : host.getWorld().getEntity(st.siphon);
         if (now >= st.siphonEnds || !(found instanceof LivingEntity target) || !target.isAlive() || target.squaredDistanceTo(host) > 24.0 * 24.0 || !host.canSee(target)) {
             st.siphonEnds = 0L;
             st.siphon = null;
@@ -1350,7 +1350,7 @@ public final class HostManager {
     /** Fells a whole tree or strips an ore vein, block by block, with the Host's own tool. */
     private static int harvest(ServerPlayerEntity var0) {
         Vec3d var1 = var0.getEyePos();
-        ServerWorld var2 = var0.getServerWorld();
+        ServerWorld var2 = var0.getWorld();
         BlockHitResult var3 = var2.raycast(new RaycastContext(var1, var1.add(var0.getRotationVec(1.0F).multiply(16.0)), ShapeType.OUTLINE, FluidHandling.NONE, var0));
         if (var3.getType() == Type.MISS) {
             say(var0, "no_target", 2);
@@ -1509,7 +1509,7 @@ public final class HostManager {
     }
 
     private static boolean light(ServerPlayerEntity var0) {
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         int var2 = count(var0, Items.TORCH);
         if (var2 == 0) {
             // No torches to place: she lends the Host her own eyes instead.
@@ -1570,7 +1570,7 @@ public final class HostManager {
         int var3 = MathHelper.clamp(var2 <= 0 ? 6 : var2, 1, 32);
         Direction var4 = var0.getHorizontalFacing();
         BlockPos var5 = var0.getBlockPos();
-        ServerWorld var6 = var0.getServerWorld();
+        ServerWorld var6 = var0.getWorld();
         HostManager.State var7 = state(var0);
 
         for (int var8 = 1; var8 <= var3; var8++) {
@@ -1599,7 +1599,7 @@ public final class HostManager {
         } else {
             Block var4 = ((BlockItem)var3.getItem()).getBlock();
             Direction var5 = var0.getHorizontalFacing();
-            ServerWorld var6 = var0.getServerWorld();
+            ServerWorld var6 = var0.getWorld();
             ArrayList var7 = new ArrayList();
             if (var1) {
                 int var8 = MathHelper.clamp(var2 <= 0 ? 6 : var2, 1, 32);
@@ -1988,7 +1988,7 @@ public final class HostManager {
             return false;
         }
 
-        ServerWorld var4 = var0.getServerWorld();
+        ServerWorld var4 = var0.getWorld();
         BlockPos var5 = var0.getBlockPos();
         List<LockableContainerBlockEntity> var6 = new ArrayList<>();
         int var7 = (int)FETCH_RANGE;

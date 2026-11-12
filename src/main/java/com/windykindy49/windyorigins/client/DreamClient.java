@@ -10,7 +10,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.passive.BatEntity;
@@ -39,7 +39,7 @@ public final class DreamClient {
             });
         });
         ClientTickEvents.END_CLIENT_TICK.register(DreamClient::tick);
-        HudRenderCallback.EVENT.register(DreamClient::render);
+        HudRenderCallback.EVENT.register((matrices, delta) -> DreamClient.render(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
     }
 
     private static void tick(MinecraftClient var0) {

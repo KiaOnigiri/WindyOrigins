@@ -37,11 +37,11 @@ public abstract class BountyCombatMixin {
                 if (!(var5.getRandom().nextFloat() >= 0.25F)) {
                     var3.setReturnValue(false);
                     BountySounds.playPrivate(var5, BountySounds.DODGE, 0.8F, 1.5F);
-                    var5.getServerWorld()
+                    var5.getWorld()
                         .spawnParticles(var5, ParticleTypes.SWEEP_ATTACK, false, var5.getX(), var5.getBodyY(0.6), var5.getZ(), 1, 0.0, 0.0, 0.0, 0.0);
                     if (var6 instanceof ServerPlayerEntity var7) {
                         BountySounds.playPrivate(var7, BountySounds.DODGE, 0.8F, 1.5F);
-                        var7.getServerWorld()
+                        var7.getWorld()
                             .spawnParticles(var7, ParticleTypes.SWEEP_ATTACK, false, var5.getX(), var5.getBodyY(0.6), var5.getZ(), 1, 0.0, 0.0, 0.0, 0.0);
                     }
                 }

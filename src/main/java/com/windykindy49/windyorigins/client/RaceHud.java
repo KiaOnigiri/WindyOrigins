@@ -4,7 +4,7 @@ import com.windykindy49.windyorigins.common.Powers;
 import com.windykindy49.windyorigins.common.WindyEffects;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.util.Identifier;
@@ -17,7 +17,7 @@ public final class RaceHud {
     }
 
     public static void init() {
-        HudRenderCallback.EVENT.register(RaceHud::render);
+        HudRenderCallback.EVENT.register((matrices, delta) -> RaceHud.render(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
     }
 
     private static void render(DrawContext var0, float var1) {

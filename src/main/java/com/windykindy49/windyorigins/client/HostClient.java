@@ -16,7 +16,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.KeyBinding;
@@ -152,7 +152,7 @@ public final class HostClient {
             ClientOutlines.TIMED.clear();
         });
         ClientTickEvents.END_CLIENT_TICK.register(HostClient::tick);
-        HudRenderCallback.EVENT.register(HostClient::renderHud);
+        HudRenderCallback.EVENT.register((matrices, delta) -> HostClient.renderHud(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
         WorldRenderEvents.AFTER_ENTITIES.register(HostClient::renderWorld);
     }
 
@@ -994,6 +994,12 @@ public final class HostClient {
     }
 
     public static Text hud(String var0) {
+        for (int i = 0; i < var0.length(); i++) {
+            if (var0.charAt(i) > '\u017f') {
+                return Text.literal(var0);
+            }
+        }
+
         return Text.literal(var0).setStyle(Style.EMPTY.withFont(HUD_FONT));
     }
 

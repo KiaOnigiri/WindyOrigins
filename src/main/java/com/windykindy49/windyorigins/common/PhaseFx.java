@@ -52,7 +52,7 @@ public final class PhaseFx {
         SoundState.markCrossPhase();
 
         try {
-            var0.getServerWorld().spawnParticles(var0, var1, true, var2, var4, var6, var8, var9, var11, var13, var15);
+            var0.getWorld().spawnParticles(var0, var1, true, var2, var4, var6, var8, var9, var11, var13, var15);
         } finally {
             SoundState.clearCrossPhase();
         }

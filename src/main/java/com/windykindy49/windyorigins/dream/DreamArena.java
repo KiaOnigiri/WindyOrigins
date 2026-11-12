@@ -569,9 +569,6 @@ public final class DreamArena {
                 } else if (var10.isOf(Blocks.SUSPICIOUS_SAND)) {
                     var0.removeBlockEntity(var9);
                     var0.setBlockState(var9, Blocks.SANDSTONE.getDefaultState(), var4);
-                } else if (var10.isOf(Blocks.SUSPICIOUS_GRAVEL)) {
-                    var0.removeBlockEntity(var9);
-                    var0.setBlockState(var9, Blocks.TUFF.getDefaultState(), var4);
                 } else {
                     if (var10.contains(Properties.WATERLOGGED) && var10.get(Properties.WATERLOGGED)) {
                         var10 = var10.with(Properties.WATERLOGGED, Boolean.valueOf(false));

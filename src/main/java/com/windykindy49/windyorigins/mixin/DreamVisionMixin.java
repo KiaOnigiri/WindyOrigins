@@ -13,7 +13,7 @@ public abstract class DreamVisionMixin {
         method = {"render"},
         at = {@At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/hud/InGameHud;render(Lnet/minecraft/client/gui/DrawContext;F)V"
+            target = "Lnet/minecraft/client/gui/hud/InGameHud;render(Lnet/minecraft/client/util/math/MatrixStack;F)V"
         )}
     )
     private void windyorigins$doubleVision(float var1, long var2, boolean var4, CallbackInfo var5) {

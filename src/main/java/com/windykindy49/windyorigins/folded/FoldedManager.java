@@ -216,7 +216,7 @@ public final class FoldedManager {
      * as long as it is held ready, every player near the line of fire sees a glint where the shooter is.
      */
     private static void warn(ServerPlayerEntity shooter, int ticksToFire) {
-        ServerWorld world = shooter.getServerWorld();
+        ServerWorld world = shooter.getWorld();
         Vec3d eye = shooter.getEyePos();
         Vec3d look = shooter.getRotationVec(1.0F);
         long now = world.getTime();
@@ -281,7 +281,7 @@ public final class FoldedManager {
             return;
         }
 
-        ServerWorld var5 = var0.getServerWorld();
+        ServerWorld var5 = var0.getWorld();
         Vec3d var6 = var0.getEyePos();
         Vec3d var7 = var0.getRotationVec(1.0F);
         if (var2 != null && var2.squaredDistanceTo(var6) < 16.0) {

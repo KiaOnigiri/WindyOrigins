@@ -8,7 +8,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult.Type;
@@ -72,9 +72,9 @@ public final class FoldedClient {
             cameraPos = context.camera().getPos();
             captured = true;
         });
-        HudRenderCallback.EVENT.register(FoldedClient::renderGlint);
+        HudRenderCallback.EVENT.register((matrices, delta) -> FoldedClient.renderGlint(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
         ClientTickEvents.END_CLIENT_TICK.register(FoldedClient::tick);
-        HudRenderCallback.EVENT.register(FoldedClient::renderScope);
+        HudRenderCallback.EVENT.register((matrices, delta) -> FoldedClient.renderScope(new com.windykindy49.windyorigins.client.DrawContext(matrices), delta));
         FoldedManager.clientShot = FoldedClient::reportShot;
     }
 

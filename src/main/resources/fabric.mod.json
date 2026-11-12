@@ -28,11 +28,11 @@
   ],
   "depends": {
     "fabricloader": "\u003e\u003d0.15.0",
-    "minecraft": "1.20.1",
+    "minecraft": "1.19.4",
     "java": "\u003e\u003d17",
     "fabric-api": "*",
-    "origins": "\u003e\u003d1.10.0",
-    "apoli": "\u003e\u003d2.9.0",
-    "calio": "\u003e\u003d1.11.0"
+    "origins": ">=1.9.0",
+    "apoli": ">=2.8.0",
+    "calio": ">=1.10.0"
   }
 }

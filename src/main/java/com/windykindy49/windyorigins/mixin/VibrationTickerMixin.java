@@ -4,30 +4,29 @@ import com.windykindy49.windyorigins.util.MirrorEntity;
 import com.windykindy49.windyorigins.util.PhaseScope;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.world.event.Vibrations.Callback;
-import net.minecraft.world.event.Vibrations.ListenerData;
-import net.minecraft.world.event.Vibrations.Ticker;
+import net.minecraft.world.event.listener.Vibration;
+import net.minecraft.world.event.listener.VibrationListener;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin({Ticker.class})
-public interface VibrationTickerMixin {
+@Mixin({VibrationListener.class})
+public class VibrationTickerMixin {
     @Inject(
-        method = {"spawnVibrationParticle"},
+        method = {"method_45495"},
         at = {@At("HEAD")}
     )
-    private static void onSpawnParticleHead(ServerWorld var0, ListenerData var1, Callback var2, CallbackInfo var3) {
-        Entity var4 = var1.getVibration() != null ? var1.getVibration().getEntity(var0).orElse(null) : null;
+    private void onSpawnParticleHead(ServerWorld var1, Vibration var2, CallbackInfo var3) {
+        Entity var4 = var2 != null ? var2.getEntity(var1).orElse(null) : null;
         PhaseScope.enterOrKeep(var4 != null ? ((MirrorEntity)var4).windyorigins$isInMirrorWorld() : null);
     }
 
     @Inject(
-        method = {"spawnVibrationParticle"},
+        method = {"method_45495"},
         at = {@At("RETURN")}
     )
-    private static void onSpawnParticleTail(ServerWorld var0, ListenerData var1, Callback var2, CallbackInfo var3) {
+    private void onSpawnParticleTail(ServerWorld var1, Vibration var2, CallbackInfo var3) {
         PhaseScope.exit();
     }
 }

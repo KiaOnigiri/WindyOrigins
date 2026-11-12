@@ -202,7 +202,7 @@ public final class FrostManager {
     private static final Map<UUID, Vec3d> RIDE_POS = new HashMap<>();
 
     private static void frostWalk(ServerPlayerEntity var0) {
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         int var2 = 2 + chill(var0) / 50;
         Entity var3 = var0.getRootVehicle();
         if (var3 == var0 || var3 == null) {
@@ -340,7 +340,7 @@ public final class FrostManager {
     }
 
     private static void raiseCoffin(ServerPlayerEntity var0) {
-        ServerWorld var2 = var0.getServerWorld();
+        ServerWorld var2 = var0.getWorld();
         Boolean var3 = SpawnPhaseOverride.push(PhaseFx.phase(var0));
 
         try {
@@ -426,7 +426,7 @@ public final class FrostManager {
             PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 1.2F);
             var0.sendMessage(Text.translatable("message.windyorigins.frost.too_warm", 30).formatted(Formatting.AQUA), true);
         } else {
-            ServerWorld var1 = var0.getServerWorld();
+            ServerWorld var1 = var0.getWorld();
             Direction var2 = var0.getHorizontalFacing();
             Direction var3 = var2.rotateYClockwise();
             BlockPos var4 = var0.getBlockPos().offset(var2, 3);

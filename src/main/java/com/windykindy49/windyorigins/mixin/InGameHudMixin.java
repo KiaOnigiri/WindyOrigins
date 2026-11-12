@@ -4,7 +4,7 @@ import io.github.apace100.apoli.component.PowerHolderComponent;
 import io.github.apace100.apoli.power.PowerType;
 import io.github.apace100.apoli.power.PowerTypeRegistry;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.Identifier;
@@ -23,7 +23,8 @@ public abstract class InGameHudMixin {
         method = {"render"},
         at = {@At("TAIL")}
     )
-    private void onRender(DrawContext var1, float var2, CallbackInfo var3) {
+    private void onRender(net.minecraft.client.util.math.MatrixStack matrices, float var2, CallbackInfo var3) {
+        DrawContext var1 = new DrawContext(matrices);
         ClientPlayerEntity var4 = MinecraftClient.getInstance().player;
         if (var4 != null) {
             if (PowerTypeRegistry.contains(MIRRORED_ORIGIN$IN_MIRROR_ID)) {

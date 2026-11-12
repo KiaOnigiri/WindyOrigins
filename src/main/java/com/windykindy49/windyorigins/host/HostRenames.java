@@ -69,7 +69,7 @@ public class HostRenames extends PersistentState {
     }
 
     public static boolean rename(ServerPlayerEntity var0) {
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         MobEntity var2 = null;
         double var3 = Double.MAX_VALUE;
 

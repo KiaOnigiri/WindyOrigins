@@ -152,7 +152,7 @@ public final class WispManager {
             }
 
             Powers.addResource(player, "echo", -COST);
-            squad = new Squad(player.getServerWorld(), player.getWorld().getTime() + LIFETIME);
+            squad = new Squad(player.getWorld(), player.getWorld().getTime() + LIFETIME);
 
             for (int i = 0; i < COUNT; i++) {
                 squad.wisps.add(new Wisp(i, player.getPos().add(0.0, 1.0, 0.0)));
@@ -214,7 +214,7 @@ public final class WispManager {
         } else if (blockHit.getType() != HitResult.Type.MISS) {
             BlockPos pos = blockHit.getBlockPos();
             BlockState state = player.getWorld().getBlockState(pos);
-            if (toolFor(player.getServerWorld(), pos, state) == null || !mayBreak(player, pos, state)) {
+            if (toolFor(player.getWorld(), pos, state) == null || !mayBreak(player, pos, state)) {
                 deny(player, Text.translatable("message.windyorigins.revenant.wisp.refuse"));
                 return;
             }

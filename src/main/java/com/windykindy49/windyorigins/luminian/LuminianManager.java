@@ -109,7 +109,7 @@ public final class LuminianManager {
     }
 
     private static void placeLight(ServerPlayerEntity var0) {
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         int var2 = Powers.resource(var0, "inner_light", 100);
         int var3 = var2 <= 0 ? 0 : MathHelper.clamp(6 + var2 * 9 / 100, 6, 15);
         LuminianManager.Placed var4 = PLACED.get(var0.getUuid());

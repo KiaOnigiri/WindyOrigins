@@ -151,7 +151,7 @@ public final class RevenantManager {
                 if (var3 != null) {
                     Powers.addResource(var3, "echo", 1);
                     PhaseFx.privateSound(var3, WindySounds.REV_ECHO, 0.8F, 1.0F + var3.getRandom().nextFloat() * 0.3F);
-                    var3.getServerWorld().spawnParticles(var3, ParticleTypes.SOUL, true, var2.pos.x, var2.pos.y, var2.pos.z, 12, 0.2, 0.2, 0.2, 0.05);
+                    var3.getWorld().spawnParticles(var3, ParticleTypes.SOUL, true, var2.pos.x, var2.pos.y, var2.pos.z, 12, 0.2, 0.2, 0.2, 0.05);
                     break;
                 }
             }
@@ -568,7 +568,7 @@ public final class RevenantManager {
         RevenantNetworking.marks(var0, new int[0]);
         ServerWorld var3 = var0.getServer().getWorld(var1.world);
         if (var3 == null) {
-            var3 = var0.getServerWorld();
+            var3 = var0.getWorld();
         }
 
         Flight.revoke(var0, Flight.GHOST);

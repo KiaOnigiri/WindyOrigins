@@ -29,10 +29,9 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.ItemStack;
 import net.minecraft.loot.LootTable;
-import net.minecraft.loot.context.LootContextParameterSet;
+import net.minecraft.loot.context.LootContext;
 import net.minecraft.loot.context.LootContextParameters;
 import net.minecraft.loot.context.LootContextTypes;
-import net.minecraft.loot.context.LootContextParameterSet.Builder;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.network.PacketByteBuf;
@@ -425,12 +424,12 @@ public final class DreamManager {
         Boolean var11 = SpawnPhaseOverride.push(PhaseFx.phase(var0));
 
         try {
-            DreamBodyEntity var12 = DreamEntities.BODY.create(var0.getServerWorld());
+            DreamBodyEntity var12 = DreamEntities.BODY.create(var0.getWorld());
             if (var12 != null) {
                 var12.setOwner(var0.getUuid());
                 var12.refreshPositionAndAngles(var0.getX(), var0.getY(), var0.getZ(), var0.getYaw(), 0.0F);
-                var0.getServerWorld().spawnEntity(var12);
-                DreamBodyEntity.holdChunk(var0.getServerWorld(), var0.getBlockPos());
+                var0.getWorld().spawnEntity(var12);
+                DreamBodyEntity.holdChunk(var0.getWorld(), var0.getBlockPos());
                 var1.bodies.put(var0.getUuid(), var12);
             }
         } finally {
@@ -702,14 +701,14 @@ public final class DreamManager {
         ArrayList var3 = new ArrayList();
         ServerWorld var4 = var0.getWorld(var1.mobWorld);
         if ((var4 == null ? null : var4.getEntity(var1.mob)) instanceof LivingEntity var6) {
-            LootTable var7 = var0.getLootManager().getLootTable(var6.getLootTable());
-            LootContextParameterSet var8 = new Builder(var4)
-                .add(LootContextParameters.THIS_ENTITY, var6)
-                .add(LootContextParameters.ORIGIN, var6.getPos())
-                .add(LootContextParameters.DAMAGE_SOURCE, var4.getDamageSources().playerAttack(var2))
-                .addOptional(LootContextParameters.KILLER_ENTITY, var2)
-                .addOptional(LootContextParameters.DIRECT_KILLER_ENTITY, var2)
-                .addOptional(LootContextParameters.LAST_DAMAGE_PLAYER, var2)
+            LootTable var7 = var0.getLootManager().getTable(var6.getLootTable());
+            LootContext var8 = new LootContext.Builder(var4)
+                .parameter(LootContextParameters.THIS_ENTITY, var6)
+                .parameter(LootContextParameters.ORIGIN, var6.getPos())
+                .parameter(LootContextParameters.DAMAGE_SOURCE, var4.getDamageSources().playerAttack(var2))
+                .optionalParameter(LootContextParameters.KILLER_ENTITY, var2)
+                .optionalParameter(LootContextParameters.DIRECT_KILLER_ENTITY, var2)
+                .optionalParameter(LootContextParameters.LAST_DAMAGE_PLAYER, var2)
                 .luck(var2.getLuck())
                 .build(LootContextTypes.ENTITY);
             var3.addAll(var7.generateLoot(var8));
@@ -872,7 +871,7 @@ public final class DreamManager {
                 }
             }
 
-            var3.playSound(null, var4, SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.BLOCKS, 1.0F, 0.6F);
+            var3.playSound(null, var4, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.BLOCKS, 1.0F, 0.6F);
         }
     }
 
@@ -881,7 +880,7 @@ public final class DreamManager {
         if (var1 != null && var0.isSneaking() && var1.walkers.contains(var0.getUuid())) {
             thicken(var0);
         } else if (var1 != null && var1.kind != DreamManager.Kind.MOB && (var1.walkers.contains(var0.getUuid()) || var1.kind == DreamManager.Kind.DUEL)) {
-            ServerWorld var2 = var0.getServerWorld();
+            ServerWorld var2 = var0.getWorld();
             long var3 = var2.getTime();
             Long var5 = var1.minionReady.get(var0.getUuid());
             long var6 = (long)var2.getEntitiesByClass(
@@ -903,7 +902,7 @@ public final class DreamManager {
     }
 
     private static void thicken(ServerPlayerEntity var0) {
-        ServerWorld var1 = var0.getServerWorld();
+        ServerWorld var1 = var0.getWorld();
         long var2 = var1.getTime();
         Long var4 = DARK_READY.get(var0.getUuid());
         if (var4 != null && var4 > var2) {
@@ -996,7 +995,7 @@ public final class DreamManager {
 
     private static void sleepHere(ServerPlayerEntity var0) {
         var0.sleep(var0.getBlockPos());
-        var0.getServerWorld().updateSleepingPlayers();
+        var0.getWorld().updateSleepingPlayers();
         var0.sendMessage(Text.translatable("message.windyorigins.dream.lay_down").formatted(Formatting.LIGHT_PURPLE), true);
     }
 

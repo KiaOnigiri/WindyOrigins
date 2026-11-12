@@ -65,12 +65,12 @@ public final class BountyManager {
     }
 
     public static boolean isReady(ServerPlayerEntity var0) {
-        BountyMarkState.Entry var1 = BountyMarkState.get(var0.getServerWorld()).peek(var0.getUuid());
+        BountyMarkState.Entry var1 = BountyMarkState.get(var0.getWorld()).peek(var0.getUuid());
         return var1 == null || var1.target == null && var1.cooldownTicks <= 0;
     }
 
     public static void tryMark(ServerPlayerEntity var0, LivingEntity var1) {
-        BountyMarkState.Entry var2 = BountyMarkState.get(var0.getServerWorld()).peek(var0.getUuid());
+        BountyMarkState.Entry var2 = BountyMarkState.get(var0.getWorld()).peek(var0.getUuid());
         if (var2 != null && var2.target != null) {
             deny(var0, Text.translatable("message.windyorigins.bounty.busy"));
         } else if (var2 != null && var2.cooldownTicks > 0) {
@@ -88,7 +88,7 @@ public final class BountyManager {
     }
 
     public static void mark(ServerPlayerEntity var0, LivingEntity var1) {
-        BountyMarkState var2 = BountyMarkState.get(var0.getServerWorld());
+        BountyMarkState var2 = BountyMarkState.get(var0.getWorld());
         BountyMarkState.Entry var3 = var2.getOrCreate(var0.getUuid());
         var3.target = var1.getUuid();
         var3.markTicks = 1200;
@@ -100,7 +100,7 @@ public final class BountyManager {
         BountyNetworking.syncHunter(var0, var1.getId(), var3.markTicks, 0);
         BountySounds.playPrivate(var0, BountySounds.MARK, 0.7F, 0.5F);
         var0.sendMessage(Text.translatable("message.windyorigins.bounty.marked", var1.getDisplayName()).formatted(Formatting.DARK_RED), true);
-        var0.getServerWorld().spawnParticles(var0, BLOOD, true, var1.getX(), var1.getBodyY(1.0) + 0.4, var1.getZ(), 14, 0.25, 0.15, 0.25, 0.0);
+        var0.getWorld().spawnParticles(var0, BLOOD, true, var1.getX(), var1.getBodyY(1.0) + 0.4, var1.getZ(), 14, 0.25, 0.15, 0.25, 0.0);
         if (var1 instanceof ServerPlayerEntity var4) {
             BountyNetworking.syncMarked(var4, true);
             BountySounds.playPrivate(var4, BountySounds.HUNTED, 1.0F, 0.8F);
@@ -109,7 +109,7 @@ public final class BountyManager {
     }
 
     public static void extend(ServerPlayerEntity var0) {
-        BountyMarkState var1 = BountyMarkState.get(var0.getServerWorld());
+        BountyMarkState var1 = BountyMarkState.get(var0.getWorld());
         BountyMarkState.Entry var2 = var1.peek(var0.getUuid());
         if (var2 != null && var2.target != null) {
             var2.markTicks = Math.min(1200, var2.markTicks + 60);
@@ -121,18 +121,18 @@ public final class BountyManager {
         if (var1 == null) {
             return false;
         } else {
-            BountyMarkState.Entry var2 = BountyMarkState.get(var0.getServerWorld()).peek(var0.getUuid());
+            BountyMarkState.Entry var2 = BountyMarkState.get(var0.getWorld()).peek(var0.getUuid());
             return var2 != null && var2.target != null && var2.target.equals(var1.getUuid());
         }
     }
 
     public static boolean hasActiveMark(ServerPlayerEntity var0) {
-        BountyMarkState.Entry var1 = BountyMarkState.get(var0.getServerWorld()).peek(var0.getUuid());
+        BountyMarkState.Entry var1 = BountyMarkState.get(var0.getWorld()).peek(var0.getUuid());
         return var1 != null && var1.target != null;
     }
 
     public static boolean isRecharging(ServerPlayerEntity var0) {
-        BountyMarkState.Entry var1 = BountyMarkState.get(var0.getServerWorld()).peek(var0.getUuid());
+        BountyMarkState.Entry var1 = BountyMarkState.get(var0.getWorld()).peek(var0.getUuid());
         return var1 != null && var1.target == null && var1.cooldownTicks > 0;
     }
 
@@ -217,7 +217,7 @@ public final class BountyManager {
 
     private static void celebrate(ServerPlayerEntity var0, Entity var1) {
         BountySounds.playPrivate(var0, BountySounds.COMPLETE, 0.6F, 1.2F);
-        ServerWorld var2 = var0.getServerWorld();
+        ServerWorld var2 = var0.getWorld();
         if (var1.getWorld() == var2) {
             double var3 = var1.getBodyY(0.5);
             var2.spawnParticles(var0, BLOOD, true, var1.getX(), var3, var1.getZ(), 40, 0.4, 0.5, 0.4, 0.0);

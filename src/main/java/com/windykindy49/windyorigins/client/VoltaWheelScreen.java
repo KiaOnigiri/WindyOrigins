@@ -6,7 +6,7 @@ import io.netty.buffer.Unpooled;
 import java.util.List;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import com.windykindy49.windyorigins.client.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.InputUtil.Key;
@@ -78,7 +78,8 @@ public class VoltaWheelScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext var1, int var2, int var3, float var4) {
+    public void render(net.minecraft.client.util.math.MatrixStack matrices, int var2, int var3, float var4) {
+        DrawContext var1 = new DrawContext(matrices);
         TextRenderer var5 = this.textRenderer;
         int var6 = this.width / 2;
         int var7 = this.height / 2;
