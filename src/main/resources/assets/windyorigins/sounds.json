@@ -304,5 +304,14 @@
         "type": "event"
       }
     ]
+  },
+  "dream.pulse": {
+    "subtitle": "subtitles.windyorigins.dream.pulse",
+    "sounds": [
+      {
+        "name": "minecraft:entity.warden.heartbeat",
+        "type": "event"
+      }
+    ]
   }
 }

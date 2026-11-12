@@ -39,10 +39,12 @@ public enum HostCommand {
     STOP(0, 0, false),
     STATUS(0, 0, false),
     HELP(0, 0, false),
+    PVP(0, 0, false),
     CHAT(0, 0, false);
 
     public static final int PAGE = 8;
-    public static final int WHEEL = 24;
+    /** How many of the requests have a place on the wheel: everything but small talk. */
+    public static final int WHEEL = 29;
     public final int heat;
     public final int cooldown;
     public final boolean targeted;
@@ -63,7 +65,12 @@ public enum HostCommand {
 
     /** Requests that cost nothing and work even when the chip is cooking. */
     public boolean free() {
-        return this == QUIET || this == STOP || this == STATUS || this == HELP || this == CHAT;
+        return this == QUIET || this == STOP || this == STATUS || this == HELP || this == PVP || this == CHAT;
+    }
+
+    /** The request in that place on the wheel, or null where the wheel is empty. */
+    public static HostCommand onWheel(int id) {
+        return id < WHEEL ? byId(id) : null;
     }
 
     public static HostCommand byId(int id) {

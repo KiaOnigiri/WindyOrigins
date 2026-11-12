@@ -27,6 +27,13 @@ public class VoltaWheelScreen extends Screen {
         super(Text.translatable("screen.windyorigins.volta_wheel"));
     }
 
+    /** The players switch shows which way it is set now. */
+    private String nameKey(HostCommand command) {
+        return command == HostCommand.PVP && this.client != null && this.client.player != null && com.windykindy49.windyorigins.common.Powers.resource(this.client.player, "volta_spares", 0) > 0
+            ? "pvp_off"
+            : command.key();
+    }
+
     @Override
     public boolean shouldPause() {
         return false;
@@ -44,7 +51,7 @@ public class VoltaWheelScreen extends Screen {
 
     private void send() {
         if (this.selected >= 0) {
-            HostCommand var1 = HostCommand.byId(this.page * 8 + this.selected);
+            HostCommand var1 = HostCommand.onWheel(this.page * 8 + this.selected);
             if (var1 != null) {
                 PacketByteBuf var2 = new PacketByteBuf(Unpooled.buffer());
                 var2.writeVarInt(var1.ordinal());
@@ -96,12 +103,12 @@ public class VoltaWheelScreen extends Screen {
         int var15 = (int)(82.0F * (0.6F + 0.4F * var14));
 
         for (int var16 = 0; var16 < 8; var16++) {
-            HostCommand var17 = HostCommand.byId(this.page * 8 + var16);
+            HostCommand var17 = HostCommand.onWheel(this.page * 8 + var16);
             if (var17 != null) {
                 double var18 = Math.toRadians((double)var16 * 45.0 - 90.0);
                 int var20 = var6 + (int)(Math.cos(var18) * (double)var15);
                 int var21 = var7 + (int)(Math.sin(var18) * (double)var15);
-                MutableText var22 = Text.translatable("volta.windyorigins.cmd." + var17.key() + ".name");
+                MutableText var22 = Text.translatable("volta.windyorigins.cmd." + nameKey(var17) + ".name");
                 int var23 = Math.max(54, var5.getWidth(var22) + 12);
                 boolean var24 = var16 == this.selected;
                 int var25 = var24 && var32 / 90L % 7L == 0L ? 2 : 0;
@@ -129,7 +136,7 @@ public class VoltaWheelScreen extends Screen {
         var1.drawTextWithShadow(var5, var34, var6 - var5.getWidth(var34) / 2, var7 - 4, HostClient.neon());
         int var35 = var7 + var15 + 18;
         if (this.selected >= 0) {
-            HostCommand var19 = HostCommand.byId(this.page * 8 + this.selected);
+            HostCommand var19 = HostCommand.onWheel(this.page * 8 + this.selected);
             if (var19 != null) {
                 MutableText var37 = Text.translatable("volta.windyorigins.cmd." + var19.key() + ".desc");
                 List var38 = var5.wrapLines(var37, 260);

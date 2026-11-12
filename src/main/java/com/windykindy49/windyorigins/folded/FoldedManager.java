@@ -52,7 +52,7 @@ import net.minecraft.registry.RegistryKeys;
 
 public final class FoldedManager {
     public static final String FOLD = "fold";
-    public static final int SHOT_COST = 30;
+    public static final int SHOT_COST = 45;
     public static final int STEP_COST = 40;
     public static final int KNOT_COST = 25;
     public static final int KNOT_REFUND = 15;
