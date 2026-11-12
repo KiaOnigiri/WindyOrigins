@@ -32,6 +32,7 @@ public final class WindySounds {
     public static final SoundEvent DREAM_LULL = reg("dream.lull");
     public static final SoundEvent DREAM_ENTER = reg("dream.enter");
     public static final SoundEvent DREAM_WAKE = reg("dream.wake");
+    public static final SoundEvent DREAM_PULSE = reg("dream.pulse");
     public static final SoundEvent DENY = reg("common.deny");
 
     private WindySounds() {

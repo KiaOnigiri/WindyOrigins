@@ -17,6 +17,9 @@ public final class HostNetworking {
     public static final Identifier FOUND = new Identifier("windyorigins", "volta_found");
     public static final Identifier SCANNED = new Identifier("windyorigins", "volta_scanned");
     public static final Identifier CAST = new Identifier("windyorigins", "volta_cast");
+    /** Server to client: "what do these words name?" Client to server: the ids they can mean. */
+    public static final Identifier ASK = new Identifier("windyorigins", "volta_ask");
+    public static final Identifier NAMES = new Identifier("windyorigins", "volta_names");
     public static final int SMILE = 0;
     public static final int SLY = 1;
     public static final int BORED = 2;
@@ -130,6 +133,14 @@ public final class HostNetworking {
         var4.writeVarInt(var2);
         var4.writeText(var3);
         ServerPlayNetworking.send(var0, FOUND, var4);
+    }
+
+    public static void ask(ServerPlayerEntity host, int id, boolean block, String said) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeVarInt(id);
+        buf.writeBoolean(block);
+        buf.writeString(said.length() > 200 ? said.substring(0, 200) : said, 256);
+        ServerPlayNetworking.send(host, ASK, buf);
     }
 
     public static void scanned(ServerPlayerEntity var0) {
