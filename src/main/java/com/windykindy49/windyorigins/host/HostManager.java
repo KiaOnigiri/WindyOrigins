@@ -143,7 +143,13 @@ public final class HostManager {
         }
     }
 
+    /** Before the worlds close: no lid is left standing open. */
+    public static void stopping() {
+        tickLids(true);
+    }
+
     public static void reset() {
+        LIDS.clear();
         STATES.clear();
         TURNED.clear();
         TURNED_OWNER.clear();
@@ -393,6 +399,7 @@ public final class HostManager {
 
         tickTurned(var0);
         tickVirus(var0);
+        tickLids(false);
     }
 
     /** Volta's energy is drawn for the Host alone; nobody else sees her sparks. */
@@ -545,6 +552,7 @@ public final class HostManager {
                 hostFx(var0, ParticleTypes.HAPPY_VILLAGER, var0.getX(), var0.getBodyY(0.5), var0.getZ(), 15, 0.4, 0.6, 0.4, 0.0);
                 HostNetworking.fx(var0, HostNetworking.FX_SELF, 0, -1, var0.getPos(), HostNetworking.GREEN, 40);
                 PhaseFx.sound(var0, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS, 0.9F, 1.3F);
+                HostNetworking.word(var0, HostNetworking.WORD_PATCHED, null, HostNetworking.GREEN);
                 say(var0, "repair", 0);
                 cast(var0, 2);
                 return 0;
@@ -557,6 +565,7 @@ public final class HostManager {
                 HostNetworking.fx(var0, HostNetworking.FX_PULSE, 1, -1, var5, HostNetworking.CYAN, 10);
                 HostNetworking.fx(var0, HostNetworking.FX_PULSE, 0, -1, var0.getPos(), HostNetworking.PINK, 10);
                 HostNetworking.fx(var0, HostNetworking.FX_SELF, 0, -1, var0.getPos(), HostNetworking.CYAN, 8);
+                HostNetworking.fx(var0, HostNetworking.FX_RUSH, 0, -1, var0.getPos(), HostNetworking.CYAN, 6);
                 return 0;
             case SCAN:
                 List<LivingEntity> var6 = var0.getWorld()
@@ -571,6 +580,7 @@ public final class HostManager {
                     );
                 HostNetworking.marks(var0, var6.stream().mapToInt(Entity::getId).toArray(), 240);
                 HostNetworking.fx(var0, HostNetworking.FX_PULSE, 0, -1, var0.getPos(), HostNetworking.CYAN, 30);
+                HostNetworking.word(var0, HostNetworking.WORD_PING, null, HostNetworking.CYAN);
                 PhaseFx.privateSound(var0, SoundEvents.BLOCK_BEACON_ACTIVATE, 0.5F, 1.8F);
                 if (var6.isEmpty()) {
                     say(var0, "detect_none", 0);
@@ -693,7 +703,17 @@ public final class HostManager {
     /** Volta's face flashes, a bolt leaves the screen, and the effect lands as the bolt does. */
     private static boolean strike(ServerPlayerEntity var0, HostCommand var1, LivingEntity var2, VoltaChat.Request var3) {
         int var4 = var1 == HostCommand.VIRUS || var1 == HostCommand.PUPPET ? HostNetworking.PINK : HostNetworking.CYAN;
-        HostNetworking.fx(var0, HostNetworking.FX_BOLT, 0, var2.getId(), chest(var2), var4, BOLT_TICKS);
+        boolean yank = var3 != null && var3.has(VoltaChat.FLAG_PULL);
+        if (var1 == HostCommand.SWAP) {
+            // Two arms, one from each side of the screen, and the trade on the tick the hit would land.
+            HostNetworking.fx(var0, HostNetworking.FX_SWAP, BOLT_TICKS, var2.getId(), chest(var2), HostNetworking.PINK, BOLT_TICKS + 8);
+        } else if (var1 == HostCommand.IMPULSE) {
+            // A fist from under the picture: it takes hold first and throws after.
+            HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, yank ? HostNetworking.SLOT_YANK : HostNetworking.SLOT_SHOVE, var2.getId(), chest(var2), HostNetworking.CYAN, yank ? 14 : 10);
+        } else {
+            HostNetworking.fx(var0, HostNetworking.FX_BOLT, 0, var2.getId(), chest(var2), var4, BOLT_TICKS);
+        }
+
         PhaseFx.sound(var0, SoundEvents.BLOCK_RESPAWN_ANCHOR_CHARGE, SoundCategory.PLAYERS, 0.6F, 1.9F);
         cast(var0, 3);
         boolean var5 = var3 != null && var3.has(VoltaChat.FLAG_PULL);
@@ -733,8 +753,10 @@ public final class HostManager {
                     break;
                 case VIRUS:
                     infect(var0, var2, 3);
+                    HostNetworking.word(var0, HostNetworking.WORD_INFECTED, var4x, HostNetworking.PINK);
                     break;
                 case BLIND:
+                    HostNetworking.word(var0, HostNetworking.WORD_LIGHTS_OUT, var4x, 0xFFFFFF);
                     var2.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 120, 0), var0);
                     if (var2 instanceof MobEntity var8) {
                         var8.setTarget(null);
@@ -762,6 +784,7 @@ public final class HostManager {
                     drain.siphon = var2.getUuid();
                     drain.siphonEnds = var0.getWorld().getTime() + (long)SIPHON_TICKS;
                     HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_DRAIN, var2.getId(), var4x, HostNetworking.GREEN, SIPHON_TICKS);
+                    HostNetworking.word(var0, HostNetworking.WORD_SLURP, var4x, HostNetworking.GREEN);
                     say(var0, "siphon", 1);
                     break;
                 case SWAP:
@@ -784,6 +807,9 @@ public final class HostManager {
                     TURNED.put(var2.getUuid(), var0.getWorld().getTime() + 300L);
                     TURNED_OWNER.put(var2.getUuid(), var0.getUuid());
                     ((MobEntity)var2).setTarget(null);
+                    // Strings from the top of the screen for as long as it dances.
+                    HostNetworking.fx(var0, HostNetworking.FX_STRING, 3, var2.getId(), chest(var2), HostNetworking.PINK, 300);
+                    HostNetworking.word(var0, HostNetworking.WORD_MINE, var4x, HostNetworking.PINK);
                     say(var0, "puppet", 1);
                     break;
                 default:
@@ -887,6 +913,7 @@ public final class HostManager {
         st.warpEnds = host.getWorld().getTime() + (long)WARP_TICKS;
         HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, host.getPos(), HostNetworking.GOLD, 16);
         HostNetworking.fx(host, HostNetworking.FX_SELF, 0, -1, host.getPos(), HostNetworking.GOLD, WARP_TICKS);
+        HostNetworking.word(host, HostNetworking.WORD_SLOW, null, HostNetworking.GOLD);
         PhaseFx.sound(host, SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.PLAYERS, 0.9F, 0.6F);
         say(host, "timewarp", 6);
         cast(host, 6);
@@ -954,6 +981,7 @@ public final class HostManager {
         st.turretEnds = host.getWorld().getTime() + (long)TURRET_TICKS;
         HostNetworking.fx(host, HostNetworking.FX_BOLT, 1, -1, pos, HostNetworking.CYAN, 6);
         HostNetworking.fx(host, HostNetworking.FX_NODE, 0, -1, pos, HostNetworking.CYAN, TURRET_TICKS);
+        HostNetworking.word(host, HostNetworking.WORD_ONLINE, pos, HostNetworking.CYAN);
         PhaseFx.privateSound(host, SoundEvents.BLOCK_BEACON_POWER_SELECT, 0.7F, 1.9F);
         say(host, "turret", 1);
         cast(host, 3);
@@ -1018,6 +1046,7 @@ public final class HostManager {
         st.shieldEnds = 0L;
         HostNetworking.fx(host, HostNetworking.FX_STOP, 1, -1, host.getPos(), 0, 0);
         HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, host.getPos(), HostNetworking.BLUE, 12);
+        HostNetworking.word(host, HostNetworking.WORD_BLOCK, null, HostNetworking.BLUE);
         PhaseFx.sound(host, SoundEvents.ITEM_SHIELD_BLOCK, SoundCategory.PLAYERS, 1.0F, 1.4F);
         if (source.getAttacker() instanceof LivingEntity attacker && attacker != host) {
             attacker.takeKnockback(1.2, host.getX() - attacker.getX(), host.getZ() - attacker.getZ());
@@ -1048,7 +1077,7 @@ public final class HostManager {
         HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, host.getPos(), HostNetworking.PINK, 14);
 
         for (LivingEntity e : caught) {
-            HostNetworking.arc(host, chest(host), chest(e), HostNetworking.PINK, 8);
+            HostNetworking.fx(host, HostNetworking.FX_STRING, 1, e.getId(), chest(e), HostNetworking.PINK, 34);
             e.addStatusEffect(new StatusEffectInstance(StatusEffects.LEVITATION, 30, 3, false, false, true), host);
             if (e instanceof MobEntity mob) {
                 mob.setTarget(null);
@@ -1069,6 +1098,7 @@ public final class HostManager {
                 if (e.isAlive() && e.getWorld() == host.getWorld()) {
                     e.damage(host.getWorld().getDamageSources().indirectMagic(host, host), 4.0F);
                     HostNetworking.fx(host, HostNetworking.FX_PULSE, 1, -1, e.getPos(), HostNetworking.PINK, 8);
+                    HostNetworking.word(host, HostNetworking.WORD_SLAM, chest(e), 0xFFFFFF);
                 }
             }
         });
@@ -1102,6 +1132,7 @@ public final class HostManager {
         st.healthTrail.clear();
         HostNetworking.fx(host, HostNetworking.FX_PULSE, 0, -1, then, HostNetworking.PINK, 12);
         HostNetworking.fx(host, HostNetworking.FX_SELF, 0, -1, then, HostNetworking.CYAN, 12);
+        HostNetworking.fx(host, HostNetworking.FX_RUSH, 1, -1, then, HostNetworking.CYAN, 7);
         PhaseFx.sound(host, SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundCategory.PLAYERS, 0.7F, 0.6F);
         say(host, "rewind", 6);
         cast(host, 2);
@@ -1123,6 +1154,7 @@ public final class HostManager {
         var6.decoyEnds = var0.getWorld().getTime() + (long)DECOY_TICKS;
         HostNetworking.fx(var0, HostNetworking.FX_DECOY, 0, -1, var4, HostNetworking.CYAN, DECOY_TICKS);
         HostNetworking.fx(var0, HostNetworking.FX_BOLT, 1, -1, var4.add(0.0, 1.0, 0.0), HostNetworking.CYAN, 6);
+        HostNetworking.word(var0, HostNetworking.WORD_PSST, var4.add(0.0, 2.0, 0.0), HostNetworking.CYAN);
         PhaseFx.sound(var0, var4.x, var4.y, var4.z, SoundEvents.ENTITY_ILLUSIONER_MIRROR_MOVE, SoundCategory.PLAYERS, 1.0F, 1.3F);
         say(var0, "decoy", 5);
         cast(var0, 3);
@@ -1255,9 +1287,9 @@ public final class HostManager {
             return false;
         }
 
-        HostNetworking.fx(var0, HostNetworking.FX_BOLT, 1, -1, var2.getPos(), HostNetworking.CYAN, 5);
+        HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POKE, -1, var2.getPos(), HostNetworking.CYAN, 8);
         cast(var0, 3);
-        later(var0, 5, () -> {
+        later(var0, 3, () -> {
             BlockState var4x = var4.getBlockState(var3);
             if (var4x.getBlock() != var5.getBlock()) {
                 return;
@@ -1827,6 +1859,7 @@ public final class HostManager {
         Vec3d var4 = var1.subtract(var0.getPos());
         int var5 = (int)Math.round(var4.length());
         HostNetworking.found(var0, var1, var2, var3);
+        HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POINT, -1, var1, HostNetworking.GOLD, 70);
         say(var0, "found", 1, var3, Text.translatable(direction(var4)), var5);
         PhaseFx.privateSound(var0, SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.6F, 1.6F);
     }
@@ -1842,45 +1875,155 @@ public final class HostManager {
         }
     }
 
+    /** How far Volta reaches for a container. */
+    private static final double FETCH_RANGE = 24.0;
+
+    /**
+     * Is the block in front of the Host with nothing opaque in the way? Glass does not hide it; being
+     * behind the Host does, because what is behind is not seen.
+     */
+    static boolean sees(ServerPlayerEntity host, BlockPos pos) {
+        Vec3d eye = host.getEyePos();
+        Vec3d centre = Vec3d.ofCenter(pos);
+        Vec3d to = centre.subtract(eye);
+        double distance = to.length();
+        if (distance < 1.6) {
+            return true;
+        }
+
+        if (to.multiply(1.0 / distance).dotProduct(host.getRotationVec(1.0F)) < 0.35) {
+            return false;
+        }
+
+        World world = host.getWorld();
+        double[][] probes = new double[][]{{0, 0, 0}, {0.45, 0, 0}, {-0.45, 0, 0}, {0, 0.42, 0}, {0, -0.42, 0}, {0, 0, 0.45}, {0, 0, -0.45}};
+
+        for (double[] probe : probes) {
+            BlockHitResult hit = world.raycast(new RaycastContext(eye, centre.add(probe[0], probe[1], probe[2]), ShapeType.VISUAL, FluidHandling.NONE, host));
+            if (hit.getType() == Type.MISS || hit.getBlockPos().equals(pos)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static final List<Object[]> LIDS = new ArrayList<>();
+
+    private static void tickLids(boolean all) {
+        LIDS.removeIf(entry -> {
+            ServerWorld world = (ServerWorld)entry[0];
+            if (all || world.getTime() >= (Long)entry[2]) {
+                lid(world, (BlockPos)entry[1], false);
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /** Lifts or drops the lid for everyone nearby, the way a hand on it would. */
+    private static void lid(ServerWorld world, BlockPos pos, boolean open) {
+        BlockState state = world.getBlockState(pos);
+        if (state.getBlock() instanceof net.minecraft.block.AbstractChestBlock<?> || state.getBlock() instanceof net.minecraft.block.ShulkerBoxBlock) {
+            world.addSyncedBlockEvent(pos, state.getBlock(), 1, open ? 1 : 0);
+            boolean shulker = state.getBlock() instanceof net.minecraft.block.ShulkerBoxBlock;
+            world.playSound(
+                null,
+                pos,
+                shulker ? (open ? SoundEvents.BLOCK_SHULKER_BOX_OPEN : SoundEvents.BLOCK_SHULKER_BOX_CLOSE) : (open ? SoundEvents.BLOCK_CHEST_OPEN : SoundEvents.BLOCK_CHEST_CLOSE),
+                SoundCategory.BLOCKS,
+                0.5F,
+                world.random.nextFloat() * 0.1F + 0.9F
+            );
+        } else if (state.getBlock() instanceof net.minecraft.block.BarrelBlock && state.contains(Properties.OPEN)) {
+            world.setBlockState(pos, state.with(Properties.OPEN, open), 3);
+            world.playSound(null, pos, open ? SoundEvents.BLOCK_BARREL_OPEN : SoundEvents.BLOCK_BARREL_CLOSE, SoundCategory.BLOCKS, 0.5F, world.random.nextFloat() * 0.1F + 0.9F);
+        }
+    }
+
+    /**
+     * Brings a stack of the named thing out of a container the Host is looking towards. The arm goes
+     * to the container, the lid comes up, and the item rides the arm back.
+     */
     private static boolean fetch(ServerPlayerEntity var0, String var1) {
         String var2 = VoltaChat.canonical(var1);
         String var3 = var2 != null ? var2 : var1.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
         if (var3.isBlank()) {
             say(var0, "how_fetch", 6);
             return false;
-        } else {
-            ServerWorld var4 = var0.getServerWorld();
-            BlockPos var5 = var0.getBlockPos();
+        }
 
-            for (BlockPos var7 : BlockPos.iterateOutwards(var5, 24, 8, 24)) {
-                BlockEntity var8 = var4.getBlockEntity(var7);
-                if (var8 instanceof LockableContainerBlockEntity) {
-                    LockableContainerBlockEntity var9 = (LockableContainerBlockEntity)var8;
-                    if (var9.checkUnlocked(var0) && var4.canPlayerModifyAt(var0, var7)) {
-                        for (int var10 = 0; var10 < var9.size(); var10++) {
-                            ItemStack var11 = var9.getStack(var10);
-                            if (!var11.isEmpty() && matchesItem(var11, var3)) {
-                                ItemStack var12 = var9.removeStack(var10, var11.getMaxCount());
-                                Text var13 = var12.getName();
-                                int var14 = var12.getCount();
-                                if (!var0.getInventory().insertStack(var12) && !var12.isEmpty()) {
-                                    var9.setStack(var10, var12);
-                                }
+        ServerWorld var4 = var0.getServerWorld();
+        BlockPos var5 = var0.getBlockPos();
+        List<LockableContainerBlockEntity> var6 = new ArrayList<>();
+        int var7 = (int)FETCH_RANGE;
 
-                                var9.markDirty();
-                                arc(var0, Vec3d.ofCenter(var7));
-                                say(var0, "fetched", 0, var14, var13);
-                                cast(var0, 3);
-                                return true;
-                            }
-                        }
+        for (int var8 = var5.getX() - var7 >> 4; var8 <= var5.getX() + var7 >> 4; var8++) {
+            for (int var9 = var5.getZ() - var7 >> 4; var9 <= var5.getZ() + var7 >> 4; var9++) {
+                net.minecraft.world.chunk.WorldChunk var10 = var4.getChunkManager().getWorldChunk(var8, var9);
+                if (var10 == null) {
+                    continue;
+                }
+
+                for (BlockEntity var12 : var10.getBlockEntities().values()) {
+                    if (var12 instanceof LockableContainerBlockEntity var13 && var13.getPos().getSquaredDistance(var0.getEyePos()) <= FETCH_RANGE * FETCH_RANGE) {
+                        var6.add(var13);
                     }
                 }
             }
-
-            say(var0, "fetch_none", 2, var1);
-            return true;
         }
+
+        Vec3d var14 = var0.getEyePos();
+        var6.sort(java.util.Comparator.comparingDouble(var1x -> var1x.getPos().getSquaredDistance(var14)));
+        for (LockableContainerBlockEntity var17 : var6) {
+            BlockPos var18 = var17.getPos();
+
+            for (int var19 = 0; var19 < var17.size(); var19++) {
+                ItemStack var20 = var17.getStack(var19);
+                if (var20.isEmpty() || !matchesItem(var20, var3)) {
+                    continue;
+                }
+
+                if (!sees(var0, var18)) {
+                    // It is there, but out of sight: she will not reach through walls or behind the Host's back.
+                    break;
+                }
+
+                if (!var4.canPlayerModifyAt(var0, var18) || !var17.checkUnlocked(var0)) {
+                    break;
+                }
+
+                ItemStack var21 = var17.removeStack(var19, var20.getMaxCount());
+                Text var22 = var21.getName();
+                int var23 = var21.getCount();
+                int var24 = Registries.ITEM.getRawId(var21.getItem());
+                if (!var0.getInventory().insertStack(var21) && !var21.isEmpty()) {
+                    var17.setStack(var19, var21);
+                    var23 -= var21.getCount();
+                }
+
+                var17.markDirty();
+                if (var23 <= 0) {
+                    say(var0, "nothing", 2);
+                    return false;
+                }
+
+                HostNetworking.fx(var0, HostNetworking.FX_GRAB, 0, var24, Vec3d.ofCenter(var18), HostNetworking.CYAN, 22);
+                later(var0, 3, () -> {
+                    lid(var4, var18, true);
+                    // Closed by the world's clock, not the Host's: the lid comes down even if she logs out.
+                    LIDS.add(new Object[]{var4, var18.toImmutable(), var4.getTime() + 14L});
+                });
+                say(var0, "fetched", 0, var23, var22);
+                cast(var0, 3);
+                return true;
+            }
+        }
+
+        // One answer whether there is none or it is merely out of sight: she is not a way to look through walls.
+        say(var0, "fetch_none", 2, var1);
+        return true;
     }
 
     private static boolean matchesItem(ItemStack var0, String var1) {
@@ -1978,6 +2121,14 @@ public final class HostManager {
         HostManager.State var2 = state(var0);
         long var3 = var0.getWorld().getTime();
         String var5 = VoltaChat.addressed(var1);
+        String var9 = var5 == null ? VoltaChat.swapLayout(var1) : null;
+        if (var9 != null && VoltaChat.addressed(var9) != null) {
+            // Typed on the wrong keyboard layout: "djknf yfqlb fkvfps".
+            var5 = VoltaChat.addressed(var9);
+        } else {
+            var9 = null;
+        }
+
         if (isBroken(var0)) {
             if (var5 != null) {
                 deadChip(var0);
@@ -1994,6 +2145,15 @@ public final class HostManager {
 
         java.util.Collection<ServerPlayerEntity> var7 = var0.getServer().getPlayerManager().getPlayerList();
         VoltaChat.Request var8 = VoltaChat.parse(var5 == null ? var1 : var5, var0, var7);
+        if (var8 == null || var8.command() == HostCommand.CHAT && var9 == null) {
+            // Her name came through but the rest did not, or she is listening and hears nonsense: try the other layout.
+            String var10 = VoltaChat.swapLayout(var5 == null ? var1 : var5);
+            VoltaChat.Request var11 = var10 == null ? null : VoltaChat.parse(var10, var0, var7);
+            if (var11 != null && var11.command() != HostCommand.CHAT) {
+                var8 = var11;
+            }
+        }
+
         if (var6 && (var8 == null || var8.command() == HostCommand.CHAT)) {
             // Not named and not a request: ordinary chat, even though she was still listening.
             var2.lastChat = var1;

@@ -1,6 +1,7 @@
 package com.windykindy49.windyorigins.host;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -76,10 +77,52 @@ public final class VoltaChat {
             }
         }
 
-        return out.toString().trim().replaceAll("\\s+", " ");
+        // "стооой", "naaaidi": a letter held down is still one letter.
+        return out.toString().trim().replaceAll("\\s+", " ").replaceAll("(\\p{L})\\1{2,}", "$1");
     }
 
+    private static final String LAYOUT_LATIN = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`";
+    private static final String LAYOUT_CYRILLIC = "йцукенгшщзхъфывапролджэячсмитьбюё";
+
+    /**
+     * What the message would have been on the other keyboard layout: "djknf yfqlb fkvfps" was meant
+     * as "вольта найди алмазы", and "мщдеф аштв" as "volta find". Null when the text has no letters to turn.
+     */
+    public static String swapLayout(String text) {
+        int latin = 0;
+        int cyrillic = 0;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = Character.toLowerCase(text.charAt(i));
+            if (c >= 'a' && c <= 'z') {
+                latin++;
+            } else if (c >= 'а' && c <= 'я' || c == 'ё') {
+                cyrillic++;
+            }
+        }
+
+        if (latin == 0 && cyrillic == 0) {
+            return null;
+        }
+
+        boolean toCyrillic = latin >= cyrillic;
+        String from = toCyrillic ? LAYOUT_LATIN : LAYOUT_CYRILLIC;
+        String to = toCyrillic ? LAYOUT_CYRILLIC : LAYOUT_LATIN;
+        StringBuilder out = new StringBuilder(text.length());
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = Character.toLowerCase(text.charAt(i));
+            int at = from.indexOf(c);
+            // Digits, spaces and underscores are the same key on both layouts.
+            out.append(at >= 0 && !(toCyrillic && (c == ',' || c == '.') && (i + 1 >= text.length() || text.charAt(i + 1) == ' ')) ? to.charAt(at) : c);
+        }
+
+        return out.toString();
+    }
+
+    /** Edit distance in which two neighbouring letters typed the wrong way round count as one slip. */
     public static int distance(String a, String b) {
+        int[] before = new int[b.length() + 1];
         int[] prev = new int[b.length() + 1];
         int[] cur = new int[b.length() + 1];
 
@@ -93,14 +136,51 @@ public final class VoltaChat {
             for (int j = 1; j <= b.length(); j++) {
                 int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
                 cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+                if (i > 1 && j > 1 && a.charAt(i - 1) == b.charAt(j - 2) && a.charAt(i - 2) == b.charAt(j - 1)) {
+                    cur[j] = Math.min(cur[j], before[j - 2] + 1);
+                }
             }
 
-            int[] swap = prev;
+            int[] swap = before;
+            before = prev;
             prev = cur;
             cur = swap;
         }
 
         return prev[b.length()];
+    }
+
+    private static boolean ascii(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) > 0x7F) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static boolean cyrillic(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= 0x0400 && c <= 0x04FF) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Irons out the ways people spell Russian in Latin letters: naydi, naidi, najdi are one word. */
+    private static String sound(String latin) {
+        return latin.replace("shch", "sch").replace("kh", "h").replace("ts", "c").replace("tz", "c").replace('w', 'v').replace('y', 'i').replace('j', 'i').replace("ii", "i");
+    }
+
+    private static final Map<String, String> LATIN_OF = new HashMap<>();
+
+    /** The keyword as someone without a Cyrillic keyboard would type it. */
+    private static String latinOf(String keyword) {
+        return LATIN_OF.computeIfAbsent(keyword, word -> sound(translit(word)));
     }
 
     private static boolean cjk(String text) {
@@ -117,10 +197,34 @@ public final class VoltaChat {
      * Does this token carry the keyword? Stems match by prefix, very short words and words marked
      * with a trailing '$' only exactly, and longer words forgive one slip of the finger.
      */
+    /** Set by {@link #tokenMatches}: the last match was a guess at a misspelling, not the word itself. */
+    private static boolean guessed;
+
     private static boolean tokenMatches(String token, String keyword) {
+        guessed = false;
         boolean exact = keyword.endsWith("$");
         if (exact) {
             keyword = keyword.substring(0, keyword.length() - 1);
+        }
+
+        if (ascii(token) && cyrillic(keyword)) {
+            // "naidi almazy": Russian in Latin letters. Short words are left alone and short stems take
+            // only an ending, or half of English would turn into Russian orders ("brother" is not "брось").
+            String latin = latinOf(keyword);
+            String heard = sound(token);
+            if (latin.length() < 4) {
+                return false;
+            } else if (exact) {
+                return heard.equals(latin);
+            } else if (heard.startsWith(latin)) {
+                return latin.length() >= 6 || heard.length() <= latin.length() + 2;
+            } else {
+                guessed = true;
+                return latin.length() >= 6
+                    && heard.length() >= latin.length() - 1
+                    && heard.charAt(0) == latin.charAt(0)
+                    && distance(heard.substring(0, Math.min(heard.length(), latin.length())), latin) <= 1;
+            }
         }
 
         if (exact || keyword.length() <= 3) {
@@ -132,8 +236,9 @@ public final class VoltaChat {
         }
 
         if (keyword.length() >= 5 && token.length() >= keyword.length() - 1) {
+            guessed = true;
             String head = token.substring(0, Math.min(token.length(), keyword.length()));
-            return head.charAt(0) == keyword.charAt(0) && distance(head, keyword) <= 1;
+            return head.charAt(0) == keyword.charAt(0) && distance(head, keyword) <= (keyword.length() >= 8 ? 2 : 1);
         }
 
         return false;
@@ -212,7 +317,8 @@ public final class VoltaChat {
                     opening = GREETERS.contains(normalize(words[j]));
                 }
 
-                if (opening || i == words.length - 1) {
+                // In a short message her name can sit anywhere: "найди, вольта, алмазы".
+                if (opening || i == words.length - 1 || words.length <= 8) {
                     found = i;
                     break;
                 }
@@ -379,14 +485,19 @@ public final class VoltaChat {
         HostCommand command = null;
         int at = Integer.MAX_VALUE;
         int length = 0;
+        boolean unsure = false;
 
         for (Map.Entry<HostCommand, String[]> entry : VERBS.entrySet()) {
             for (String word : entry.getValue()) {
+                guessed = false;
                 int index = find(text, tokens, word);
-                if (index >= 0 && (index < at || index == at && word.length() > length)) {
+                boolean guess = guessed;
+                // Earliest word wins; on the same word, the real thing beats a guessed typo, then the longer match.
+                if (index >= 0 && (index < at || index == at && (unsure && !guess || unsure == guess && word.length() > length))) {
                     command = entry.getKey();
                     at = index;
                     length = word.length();
+                    unsure = guess;
                 }
             }
         }
@@ -397,6 +508,47 @@ public final class VoltaChat {
             for (String word : entry.getValue()) {
                 if (find(text, tokens, word) >= 0) {
                     flags |= entry.getKey();
+                    break;
+                }
+            }
+        }
+
+        if (command == null) {
+            // "покопай", "постреляй", "насобирай": the same verbs under a Russian prefix.
+            search:
+            for (int i = 0; i < tokens.length; i++) {
+                String token = tokens[i];
+                if (!cyrillic(token)) {
+                    continue;
+                }
+
+                for (String prefix : PREFIXES) {
+                    if (token.length() < prefix.length() + 3 || !token.startsWith(prefix)) {
+                        continue;
+                    }
+
+                    String[] rest = new String[]{token.substring(prefix.length())};
+
+                    for (Map.Entry<HostCommand, String[]> entry : VERBS.entrySet()) {
+                        for (String word : entry.getValue()) {
+                            if (word.indexOf(' ') < 0 && !cjk(word) && find(rest[0], rest, word) == 0) {
+                                command = entry.getKey();
+                                at = i;
+                                break search;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (command == null) {
+            // "мне нужен уголь", "i need coal": wanting a thing is asking for it to be brought.
+            for (String word : WANTS) {
+                int index = find(text, tokens, word);
+                if (index >= 0) {
+                    command = HostCommand.FETCH;
+                    at = index;
                     break;
                 }
             }
@@ -427,7 +579,9 @@ public final class VoltaChat {
             if (token.matches("\\d{1,3}")) {
                 number = Integer.parseInt(token);
             } else if (NUMBERS.containsKey(token)) {
-                number = NUMBERS.get(token);
+                int value = NUMBERS.get(token);
+                // "двадцать пять", "twenty five".
+                number = number >= 20 && number % 10 == 0 && value < 10 && i > 0 && NUMBERS.containsKey(tokens[i - 1]) ? number + value : value;
             } else if (i != at && !FILLER.contains(token) && !carriesVerb(token)) {
                 subject.add(token);
             }
@@ -460,7 +614,31 @@ public final class VoltaChat {
             }
         }
 
+        if (ascii(text)) {
+            String heard = sound(text);
+
+            for (Map.Entry<String, String> entry : ALIASES.entrySet()) {
+                String key = entry.getKey();
+                if (cyrillic(key) && key.trim().length() >= 4 && heard.contains(" " + latinOf(key.trim()))) {
+                    return entry.getValue();
+                }
+            }
+        }
+
         return null;
+    }
+
+    private static final String[] PREFIXES = new String[]{"пере", "раз", "рас", "под", "при", "про", "по", "от", "вы", "за", "на", "из", "ис", "до", "об", "с", "у"};
+    private static final String[] WANTS = new String[]{
+        "нужен", "нужна", "нужно", "нужны", "хочу", "надо$", "потрібен", "потрібна", "потрібно", "need", "want", "brauche", "besoin", "necesito", "preciso", "potrzebuje", "欲しい", "需要"
+    };
+
+    private static String[] more(HostCommand command, String... words) {
+        String[] old = VERBS.get(command);
+        String[] all = Arrays.copyOf(old, old.length + words.length);
+        System.arraycopy(words, 0, all, old.length, words.length);
+        VERBS.put(command, all);
+        return all;
     }
 
     public static boolean wantsEnemy(String subject) {
@@ -608,6 +786,38 @@ public final class VoltaChat {
             "помощь", "что ты умеешь", "что умеешь", "что можешь", "команды", "умеешь", "справка", "допомога", "вмієш", "help", "commands", "what can you", "hilfe",
             "befehle", "aide$", "commandes", "ayuda", "comandos", "ajuda", "pomoc", "komendy", "ヘルプ", "何ができる", "帮助", "命令"
         });
+        // Other ways people actually say it.
+        more(HostCommand.STOP, "прекращай", "отставить", "не надо", "хорош$", "стопэ", "остановк", "тормози", "перестань", "забей", "nevermind", "never mind", "lass", "basta");
+        more(HostCommand.FIND, "найд", "разыщи", "сыщи", "поиск", "ищу", "ищем", "ищи мне", "есть ли", "покажи", "подскажи где", "куда делся", "gde$", "look for", "show me", "is there", "any$");
+        more(HostCommand.FETCH, "принес", "достан", "забери", "вытащи", "вынь", "дай мне", "неси мне", "подкинь мне", "take", "hand me", "pass me", "gib mir", "prends", "dame", "me da", "daj");
+        more(
+            HostCommand.OVERLOAD, "врежь", "вмажь", "долбани", "шандарахни", "жги$", "жгани", "пальни", "стрельни", "грохни", "замочи", "прикончи", "добей", "уничтож",
+            "разнеси", "поджарь", "тресни", "вреж", "ебни", "ебани", "въеби", "ушатай", "вальни", "гаси$", "фас$", "destroy", "nuke", "bonk", "smack", "electrocute", "zapp"
+        );
+        more(HostCommand.VIRUS, "заразу", "яд$", "травани", "потрави", "чума", "чуму");
+        more(HostCommand.BLIND, "глаза", "ослепл", "засвети", "выключи ему свет");
+        more(HostCommand.IMPULSE, "пни$", "пинок", "пинка", "отшвырни", "запусти", "выкинь", "скинь", "сбрось", "отпихни", "вышвырни", "kick", "punt", "shove", "hurl");
+        more(HostCommand.PUPPET, "марионет", "зомбируй", "перевербуй", "под контроль", "приручи", "завербуй", "натрави", "сделай своим", "mind control", "enslave");
+        more(HostCommand.DECOY, "приман", "отвлек", "замани", "ложная цель", "fake me");
+        more(HostCommand.TIMEWARP, "замедлен", "стоп время", "заморозь время", "время стоп", "слоу", "slow down", "freeze time");
+        more(HostCommand.SIPHON, "высос", "вампир", "укради здоров", "забери хп", "отними здоров", "сифонь", "покушай", "lifesteal", "steal health");
+        more(HostCommand.SWAP, "свап", "махнись", "обмен", "поменя", "поменяться", "рокир", "switch with");
+        more(HostCommand.TURRET, "охраня", "страж", "поставь пушку", "караул", "guard this", "defend");
+        more(HostCommand.SHIELD, "защищ", "укрой", "закрой меня", "прикрывай", "броню", "спаси$", "спасай", "cover me");
+        more(HostCommand.GRAVITY, "взлет", "подвесь", "в воздух", "подкинь всех", "подбрось всех", "вверх всех", "juggle");
+        more(HostCommand.REWIND, "верни назад", "вернись назад", "отмотк", "назад$", "отмени смерть", "вернуть назад", "back in time");
+        more(HostCommand.REPAIR, "подлечи", "полечи", "хилни", "отхиль", "хп$", "здоровь", "аптечк", "лечени", "исцели", "залечи", "подхиль", "heal me", "hp$", "medic");
+        more(HostCommand.BLINK, "прыжок", "рывок", "дэш", "деш$", "перемести", "телепортир", "скакни", "блинкни", "перепрыгни", "туда$", "dash", "hop$", "leap");
+        more(HostCommand.SCAN, "радар", "сонар", "осмотрись", "осмотри", "что вокруг", "кто вокруг", "враги рядом", "есть кто", "пинг", "проверь", "чекни", "check", "ping", "sonar");
+        more(HostCommand.MAGNET, "подбирай", "собир", "всоси", "лутай", "залут", "притяни лут", "пылесось", "hoover", "grab loot");
+        more(HostCommand.HARVEST, "срубай", "сруб", "нарубай", "спили", "добыч", "выдолби", "сними жилу", "вали дерево", "дерево руби", "заготовь", "lumberjack", "timber");
+        more(HostCommand.DIG, "копа", "проход", "шахт", "пробей", "проруби", "прокладывай", "бури$", "пробури", "вниз копай", "drill", "bore$", "shaft");
+        more(HostCommand.BUILD, "построи", "мостик", "стенк", "перекрыт", "заделай", "замуруй", "проложи", "закрой проход", "забаррикадир", "construct", "barricade");
+        more(HostCommand.TOGGLE, "откро", "закро", "ворот", "калитк", "кнопк", "щелкни", "активируй", "жми$", "отвори", "затвори", "дерни рычаг", "switch on", "unlock", "push the");
+        more(HostCommand.LIGHT, "подсвети", "темнот", "ничего не вижу", "не видно", "фонар", "ламп", "освещ", "ночное зрение", "включи свет", "поставь факел", "cant see", "too dark", "lamp");
+        more(HostCommand.QUIET, "тише", "умолкни", "тсс", "цыц", "не болтай", "помолч", "хватит болтать", "be quiet", "stfu", "sei leise");
+        more(HostCommand.STATUS, "перегрелась", "сколько градус", "как нагрев", "темп$", "ты как", "жива", "чип как", "how are your", "overheating");
+        more(HostCommand.HELP, "хелп", "помоги", "список команд", "инструкц", "что ты можешь", "чего умеешь", "как тобой", "как пользоваться", "how do i", "what do you do");
         FLAGS.put(FLAG_DOWN, new String[]{
             "лестниц", "ступен", "спуск", "вниз", "сход", "stair", "steps", "down", "treppe", "runter", "escalier", "bas$", "escalera", "abajo", "escada", "baixo", "schod",
             "dol$", "階段", "下", "楼梯"
@@ -662,21 +872,29 @@ public final class VoltaChat {
             FILLER.add(word);
         }
 
-        numbers(1, "одну", "одна", "one");
-        numbers(2, "два", "две", "пару", "two");
-        numbers(3, "три", "three");
-        numbers(4, "четыре", "four");
-        numbers(5, "пять", "five");
-        numbers(6, "шесть", "six");
-        numbers(7, "семь", "seven");
-        numbers(8, "восемь", "eight");
-        numbers(9, "девять", "nine");
-        numbers(10, "десять", "ten", "десяток");
-        numbers(12, "двенадцать", "twelve");
-        numbers(15, "пятнадцать", "fifteen");
+        numbers(1, "одну", "одна", "одного", "one", "eins", "uno", "jeden", "um$");
+        numbers(2, "два", "две", "двух", "пару", "two", "zwei", "dos", "deux", "dwa", "dois");
+        numbers(3, "три", "трех", "тройку", "three", "drei", "tres", "trois", "trzy");
+        numbers(4, "четыре", "четырех", "чотири", "four", "vier", "cuatro", "quatre", "cztery", "quatro");
+        numbers(5, "пять", "пяти", "пяток", "five", "funf", "cinco", "cinq", "piec");
+        numbers(6, "шесть", "шести", "шість", "six", "sechs", "seis", "szesc");
+        numbers(7, "семь", "семи", "сім", "seven", "sieben", "siete", "sept", "siedem", "sete");
+        numbers(8, "восемь", "восьми", "вісім", "eight", "acht", "ocho", "huit", "osiem", "oito");
+        numbers(9, "девять", "девяти", "nine", "neun", "nueve", "neuf", "dziewiec", "nove");
+        numbers(10, "десять", "десяти", "ten", "десяток", "zehn", "diez", "dix", "dziesiec", "dez");
+        numbers(11, "одиннадцать", "eleven");
+        numbers(12, "двенадцать", "дюжину", "twelve", "dozen");
+        numbers(13, "тринадцать", "thirteen");
+        numbers(14, "четырнадцать", "fourteen");
+        numbers(15, "пятнадцать", "пятнадцати", "fifteen");
         numbers(16, "шестнадцать", "sixteen");
-        numbers(20, "двадцать", "twenty");
-        numbers(30, "тридцать", "thirty");
+        numbers(17, "семнадцать", "seventeen");
+        numbers(18, "восемнадцать", "eighteen");
+        numbers(19, "девятнадцать", "nineteen");
+        numbers(20, "двадцать", "двадцати", "twenty", "zwanzig", "veinte", "vingt", "dwadziescia", "vinte");
+        numbers(30, "тридцать", "тридцати", "thirty", "dreissig", "treinta", "trente", "trinta");
+        numbers(40, "сорок", "сорока", "forty");
+        numbers(50, "пятьдесят", "полсотни", "fifty");
         alias("ancient_debris", "обломк", "древн", "уламк", "debris", "schutt", "restos", "destrocos", "pozostalos", "незерит", "netherite", "残骸");
         alias("diamond", "алмаз", "діамант", "diamant", "diamond", "diament", "ダイヤ", "钻石");
         alias("iron", "желез", "залізн", "залізо", "iron", "eisen", "fer ", "hierro", "ferro", "zelaz", "鉄", "铁");

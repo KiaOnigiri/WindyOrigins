@@ -97,6 +97,7 @@ public final class RaceEvents {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(var0 -> {
             DreamManager.stopping(var0);
             RevenantManager.stopping(var0);
+            HostManager.stopping();
             FrostManager.reset();
             SanguineManager.reset();
             LuminianManager.reset();

@@ -35,8 +35,36 @@ public final class HostNetworking {
     public static final int FX_STOP = 5;
     public static final int FX_ARC = 6;
     public static final int FX_NODE = 7;
+    /** An arm that reaches a container, grips, and hauls an item back; the entity field carries the item's raw id. */
+    public static final int FX_GRAB = 8;
+    /** Two arms from either side seize a creature and trade its place with the Host's; the slot is the tick of the trade. */
+    public static final int FX_SWAP = 9;
+    /** Taut strings let down from the top of the screen onto a creature; the slot is how many. */
+    public static final int FX_STRING = 10;
+    /** A burst of speed lines: slot 0 for a leap forward, 1 for being wound back. */
+    public static final int FX_RUSH = 11;
+    /** A drawn sound effect; the slot picks the word. */
+    public static final int FX_WORD = 12;
     /** Tendril slot whose lumps run back towards the Host: something is being drunk. */
     public static final int SLOT_DRAIN = 7;
+    /** A thin arm that only points: "it is there". */
+    public static final int SLOT_POINT = 8;
+    /** A heavy arm from below that seizes a creature and hurls it away, or hauls it in. */
+    public static final int SLOT_SHOVE = 9;
+    public static final int SLOT_YANK = 10;
+    /** A quick jab at a door or a lever. */
+    public static final int SLOT_POKE = 11;
+    public static final int WORD_BLOCK = 0;
+    public static final int WORD_SLOW = 1;
+    public static final int WORD_PING = 2;
+    public static final int WORD_PATCHED = 3;
+    public static final int WORD_MINE = 4;
+    public static final int WORD_SLAM = 5;
+    public static final int WORD_PSST = 6;
+    public static final int WORD_ONLINE = 7;
+    public static final int WORD_LIGHTS_OUT = 8;
+    public static final int WORD_SLURP = 9;
+    public static final int WORD_INFECTED = 10;
     public static final int CYAN = 0x45F0E6;
     public static final int PINK = 0xF03CC8;
     public static final int GREEN = 0x5CFF8A;
@@ -97,6 +125,11 @@ public final class HostNetworking {
     /** A jump of energy between two points in the world. */
     public static void arc(ServerPlayerEntity var0, Vec3d var1, Vec3d var2, int var3, int var4) {
         send(var0, FX_ARC, 0, -1, var2, var1, var3, var4);
+    }
+
+    /** A drawn word over a place in the world, or in the middle of the screen when there is no place. */
+    public static void word(ServerPlayerEntity host, int word, Vec3d at, int color) {
+        send(host, FX_WORD, word, at == null ? -2 : -1, at == null ? Vec3d.ZERO : at, Vec3d.ZERO, color, 9);
     }
 
     private static void send(ServerPlayerEntity var0, int var1, int var2, int var3, Vec3d var4, Vec3d var5, int var6, int var7) {

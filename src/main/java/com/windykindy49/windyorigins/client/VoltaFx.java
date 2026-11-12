@@ -48,6 +48,25 @@ public final class VoltaFx {
     private static final int SOLID = 0xFF000000;
     private static final String[] HIT_WORDS = new String[]{"ZAP!", "POW!", "BAM!", "KZZT!"};
     private static final String[] WORK_WORDS = new String[]{"KRAK", "CHOMP", "NOM", "SNAP", "YOINK"};
+    /** Indexed by HostNetworking.WORD_*. */
+    private static final String[] SAID = new String[]{"BLOCK!", "SLOOOW", "PING", "PATCHED", "MINE!", "SLAM!", "PSST", "ONLINE", "LIGHTS OUT", "SLURP", "INFECTED"};
+    /** Pellet slot for what an arm hauls out of a container. */
+    private static final int SLOT_HAUL = 40;
+    private static final int JOINTS = 22;
+    private static final float[] JX = new float[JOINTS];
+    private static final float[] JY = new float[JOINTS];
+    private static final float[] JR = new float[JOINTS];
+    // The curve of the arm drawn last, so that what rides along it can be placed.
+    private static float curveOx;
+    private static float curveOy;
+    private static float curveCx;
+    private static float curveCy;
+    private static float curveTx;
+    private static float curveTy;
+    private static float curveNx;
+    private static float curveNy;
+    /** Item icons to put on top of the canvas this frame: raw id, x, y, size, turn. */
+    private static final List<float[]> ICONS = new ArrayList<>();
     private static final List<Fx> ACTIVE = new ArrayList<>();
     private static final List<Fleck> FLECKS = new ArrayList<>();
     private static final List<Pellet> PELLETS = new ArrayList<>();
@@ -227,8 +246,22 @@ public final class VoltaFx {
             }
         }
 
+        if (kind == HostNetworking.FX_WORD) {
+            float[] at = entityId == -2 || !captured ? new float[]{(float)screenW * 0.5F, (float)screenH * 0.4F, 1.0F} : project(pos);
+            if (at[2] != 0.0F && slot >= 0 && slot < SAID.length) {
+                word(SAID[slot], MathHelper.clamp(at[0], 60.0F, (float)screenW - 60.0F), MathHelper.clamp(at[1] - 26.0F * scale(), 30.0F, (float)screenH - 30.0F), color == 0 ? 0xFFFFFF : color, ticks);
+                glitch = Math.max(glitch, 0.5F);
+            }
+
+            return;
+        }
+
         if (kind == HostNetworking.FX_DECOY || kind == HostNetworking.FX_NODE) {
             ACTIVE.removeIf(fx -> fx.kind == kind);
+        }
+
+        if (kind == HostNetworking.FX_STRING) {
+            ACTIVE.removeIf(fx -> fx.kind == kind && fx.entityId == entityId);
         }
 
         Fx fx = new Fx(kind, slot, casterId, entityId, pos, source, color, ticks);
@@ -237,6 +270,14 @@ public final class VoltaFx {
         }
 
         ACTIVE.add(fx);
+        if (kind == HostNetworking.FX_RUSH) {
+            glitch = 1.0F;
+            kick = 1.0F;
+            word(slot == 0 ? "ZIP!" : "<< REWIND", (float)screenW * 0.5F, (float)screenH * 0.3F, slot == 0 ? 0xFFFFFF : MAGENTA, 8);
+        } else if (kind == HostNetworking.FX_STRING) {
+            glitch = Math.max(glitch, 0.5F);
+        }
+
         if (kind == HostNetworking.FX_PULSE && slot == 0) {
             glitch = Math.max(glitch, 0.8F);
             kick = Math.max(kick, 0.5F);
@@ -342,6 +383,61 @@ public final class VoltaFx {
                     play(client, SoundEvents.ENTITY_GENERIC_EXPLODE, 0.25F, 2.0F);
                     play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.6F, 1.6F);
                 }
+            } else if (fx.kind == HostNetworking.FX_GRAB) {
+                tickGrab(client, fx);
+            } else if (fx.kind == HostNetworking.FX_SWAP) {
+                tickSwap(client, fx);
+            } else if (fx.kind == HostNetworking.FX_STRING) {
+                Entity held = fx.entityId >= 0 ? client.world.getEntityById(fx.entityId) : null;
+                if (fx.entityId >= 0 && (held == null || !held.isAlive())) {
+                    fx.life = Math.min(fx.life, 3);
+                }
+
+                if (fx.age == 1) {
+                    play(client, SoundEvents.ITEM_CROSSBOW_LOADING_END, 0.7F, 1.8F);
+                }
+            } else if (fx.kind == HostNetworking.FX_RUSH && fx.age == 1) {
+                play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_1, 0.5F, fx.slot == 0 ? 2.0F : 0.6F);
+            } else if (fx.kind == HostNetworking.FX_TENDRIL && fx.slot == HostNetworking.SLOT_POINT) {
+                // It only points; nothing is struck.
+                fx.punch = 99;
+                if (fx.age == 2) {
+                    float[] at = project(current(fx, client));
+                    if (at[2] != 0.0F) {
+                        word("THERE!", MathHelper.clamp(at[0], 60.0F, (float)screenW - 60.0F), MathHelper.clamp(at[1] - 30.0F * scale(), 30.0F, (float)screenH - 30.0F), 0xFFFFFF, 10);
+                    }
+
+                    play(client, SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), 0.6F, 1.8F);
+                }
+            } else if (fx.kind == HostNetworking.FX_TENDRIL && fx.slot >= HostNetworking.SLOT_SHOVE && fx.slot <= HostNetworking.SLOT_POKE) {
+                boolean poke = fx.slot == HostNetworking.SLOT_POKE;
+                if (!poke && fx.age == 6) {
+                    // The grip was only the wind-up: this is the throw.
+                    fx.punch = 0;
+                }
+
+                if (fx.punch == 0) {
+                    float[] at = project(current(fx, client));
+                    boolean throwing = !poke && fx.age >= 6;
+                    splash(at[0], at[1], throwing ? 20 : 9, fx.color, throwing ? 1.6F : 1.0F);
+                    kick = Math.max(kick, throwing ? 1.0F : 0.5F);
+                    glitch = Math.max(glitch, throwing ? 1.0F : 0.6F);
+                    if (poke) {
+                        word("CLICK", at[0], at[1] - 22.0F * scale(), 0xFFFFFF, 6);
+                        play(client, SoundEvents.BLOCK_STONE_BUTTON_CLICK_ON, 0.7F, 1.6F);
+                    } else if (throwing) {
+                        word(fx.slot == HostNetworking.SLOT_YANK ? "C'MERE!" : "YEET!", at[0], at[1] - 34.0F * scale(), 0xFFFFFF, 9);
+                        impactTicks = 3;
+                        impactX = at[0];
+                        impactY = at[1];
+                        impactColor = fx.color;
+                        play(client, SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK, 0.8F, 0.7F);
+                        play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_3, 0.4F, 1.6F);
+                    } else {
+                        word("GRAB", at[0], at[1] - 22.0F * scale(), 0xFFFFFF, 5);
+                        play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.6F, 1.2F);
+                    }
+                }
             } else if (fx.kind == HostNetworking.FX_TENDRIL) {
                 boolean drain = fx.slot == HostNetworking.SLOT_DRAIN;
                 if (drain && fx.age % 2 == 0) {
@@ -391,6 +487,52 @@ public final class VoltaFx {
             }
         }
     }
+
+    /** Fetching: reach, grip the lid on the third tick, haul the thing back, swallow it at the edge. */
+    private static void tickGrab(MinecraftClient client, Fx fx) {
+        float sc = scale();
+        if (fx.age == 3) {
+            float[] at = project(fx.pos);
+            splash(at[0], at[1], 14, GOLD, 1.2F);
+            word("YOINK!", MathHelper.clamp(at[0], 60.0F, (float)screenW - 60.0F), at[1] - 30.0F * sc, 0xFFFFFF, 8);
+            kick = Math.max(kick, 0.7F);
+            glitch = Math.max(glitch, 0.8F);
+            play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.7F, 1.1F);
+        } else if (fx.age > 3 && fx.age < 15 && fx.age % 2 == 0) {
+            PELLETS.add(new Pellet(SLOT_HAUL, 1.0F - (float)(fx.age - 4) / 11.0F, -0.1F, (float)(Math.random() - 0.5), Math.random() < 0.5 ? GOLD : 0xFFFFFF));
+        } else if (fx.age == 15) {
+            splash((float)screenW - 10.0F * sc, (float)screenH * 0.62F, 16, GOLD, 1.3F);
+            word("GOT IT", (float)screenW - 70.0F * sc, (float)screenH * 0.62F - 30.0F * sc, GOLD, 8);
+            kick = Math.max(kick, 0.6F);
+            play(client, SoundEvents.ENTITY_ITEM_PICKUP, 0.8F, 0.7F);
+            play(client, SoundEvents.ENTITY_PLAYER_BURP, 0.25F, 1.6F);
+        }
+    }
+
+    /** Trading places: both hands close on the target, and on the appointed tick the picture is wrenched over. */
+    private static void tickSwap(MinecraftClient client, Fx fx) {
+        float sc = scale();
+        if (fx.age == 2) {
+            float[] at = project(current(fx, client));
+            splash(at[0], at[1], 12, fx.color, 1.0F);
+            word("GOTCHA", MathHelper.clamp(at[0], 60.0F, (float)screenW - 60.0F), at[1] - 34.0F * sc, 0xFFFFFF, 5);
+            glitch = Math.max(glitch, 0.7F);
+            play(client, SoundEvents.ENTITY_SLIME_SQUISH, 0.7F, 0.9F);
+        } else if (fx.age == fx.slot) {
+            impactTicks = 3;
+            impactX = (float)screenW * 0.5F;
+            impactY = (float)screenH * 0.5F;
+            impactColor = MAGENTA;
+            kick = 1.0F;
+            glitch = 1.0F;
+            splash(impactX, impactY, 30, fx.color, 2.0F);
+            word("SWAP!", impactX, impactY - 40.0F * sc, 0xFFFFFF, 10);
+            play(client, SoundEvents.ITEM_TRIDENT_RIPTIDE_3, 0.6F, 1.4F);
+            play(client, SoundEvents.ENTITY_ILLUSIONER_MIRROR_MOVE, 0.9F, 1.6F);
+        }
+    }
+
+    private static final int GOLD = 0xFFD24A;
 
     /** Where the effect currently points: it follows its target entity while that still exists. */
     private static Vec3d current(Fx fx, MinecraftClient client) {
@@ -810,6 +952,7 @@ public final class VoltaFx {
         }
 
         canvas(width, height);
+        ICONS.clear();
         float sc = scale();
         if (impactTicks > 0 && impactTicks < 3) {
             // ...then two of hard lines flying out of the hit.
@@ -830,6 +973,10 @@ public final class VoltaFx {
                 case HostNetworking.FX_NODE -> node(fx, beat);
                 case HostNetworking.FX_ARC -> arc(fx, now);
                 case HostNetworking.FX_TENDRIL -> arm(client, fx, now, beat, width, height);
+                case HostNetworking.FX_GRAB -> grab(fx, now, beat, width, height);
+                case HostNetworking.FX_SWAP -> swap(client, fx, now, beat, width, height);
+                case HostNetworking.FX_STRING -> strings(client, fx, now, beat);
+                case HostNetworking.FX_RUSH -> rush(fx, now, width, height);
                 case HostNetworking.FX_BOLT -> shot(client, fx, now, beat, width, height);
                 default -> {
                 }
@@ -842,6 +989,19 @@ public final class VoltaFx {
         }
 
         flush(context, beat, now);
+
+        for (float[] icon : ICONS) {
+            // The real thing rides the arm: the item's own picture, big, crooked and held on twos.
+            net.minecraft.item.Item item = net.minecraft.registry.Registries.ITEM.get((int)icon[0]);
+            MatrixStack matrices = context.getMatrices();
+            matrices.push();
+            matrices.translate(icon[1], icon[2], 150.0F);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(icon[4]));
+            matrices.scale(icon[3], icon[3], 1.0F);
+            context.drawItem(new net.minecraft.item.ItemStack(item), -8, -8);
+            matrices.pop();
+        }
+
         TextRenderer font = client.textRenderer;
 
         for (Word word : WORDS) {
@@ -874,90 +1034,291 @@ public final class VoltaFx {
         }
     }
 
-    /** The arm of mass that comes out of the edge of the screen and grips its work. */
-    private static void arm(MinecraftClient client, Fx fx, int now, int beat, int width, int height) {
+    /**
+     * Lays the mass out from a point off the edge of the screen to a point on it and paints it: a sagging,
+     * lumpy limb whose pose is held on the beat. The joints are left in JX/JY/JR and the curve is remembered.
+     */
+    private static void chain(Fx fx, float ox, float oy, float tx, float ty, float reach, float thick, float flow, int now, int beat, int color, int salt, float side) {
         float sc = scale();
-        boolean drain = fx.slot == HostNetworking.SLOT_DRAIN;
-        float ox = (float)width + 14.0F * sc;
-        float oy = (float)height * (drain ? 0.72F : 0.5F + 0.11F * (float)(fx.slot % 3));
-        float[] tip = project(current(fx, client));
-        float dx = tip[0] - ox;
-        float dy = tip[1] - oy;
+        float dx = tx - ox;
+        float dy = ty - oy;
         float len = Math.max(1.0F, (float)Math.sqrt((double)(dx * dx + dy * dy)));
         float nx = -dy / len;
         float ny = dx / len;
         // It hangs like something with weight, and the hang changes pose on the beat.
-        float bend = len * (0.14F + 0.07F * (float)hash(fx.seed, beat / 2, 1));
-        float cx = ox + dx * 0.5F + nx * bend;
-        float cy = oy + dy * 0.5F + ny * bend + 18.0F * sc;
+        float bend = len * (0.14F + 0.07F * (float)hash(fx.seed + (long)salt, beat / 2, 1)) * side;
+        curveOx = ox;
+        curveOy = oy;
+        curveCx = ox + dx * 0.5F + nx * bend;
+        curveCy = oy + dy * 0.5F + ny * bend + 18.0F * sc;
+        curveTx = tx;
+        curveTy = ty;
+        curveNx = nx;
+        curveNy = ny;
+        // Sometimes a stretch of the arm simply is not there for a beat.
+        int torn = hash(fx.seed + (long)salt, beat, 9) > 0.36 ? 4 + (int)((hash(fx.seed + (long)salt, beat, 10) + 0.5) * 12.0) : -9;
+
+        for (int i = 0; i < JOINTS; i++) {
+            float s = (float)i / (float)(JOINTS - 1) * reach;
+            float u = 1.0F - s;
+            float sway = (float)hash(fx.seed + (long)salt, i, beat) * 9.0F * sc * (float)Math.sin(Math.PI * (double)s);
+            JX[i] = u * u * ox + 2.0F * u * s * curveCx + s * s * tx + nx * sway;
+            JY[i] = u * u * oy + 2.0F * u * s * curveCy + s * s * ty + ny * sway;
+            float base = MathHelper.lerp((float)Math.pow((double)s, 0.7), 26.0F, 9.0F) * sc * thick;
+            // Lumps travel along it: mass pumped out to the work, or drunk back.
+            int phase = Math.floorMod(i + (int)flow * now, 5);
+            JR[i] = base + (phase == 0 ? 8.0F : (phase == 1 ? 4.0F : 0.0F)) * sc * thick;
+        }
+
+        for (int i = 0; i + 1 < JOINTS; i++) {
+            if (i == torn || i == torn + 1) {
+                continue;
+            }
+
+            limb(JX[i], JY[i], JR[i], JX[i + 1], JY[i + 1], JR[i + 1], color);
+        }
+
+        // A drip off its belly.
+        int mid = JOINTS / 2;
+        blob(JX[mid], JY[mid] + JR[mid] * (1.0F + 0.5F * (float)(beat % 3)), JR[mid] * 0.4F, color);
+    }
+
+    private static float curveX(float s, float off) {
+        float u = 1.0F - s;
+        return u * u * curveOx + 2.0F * u * s * curveCx + s * s * curveTx + curveNx * off;
+    }
+
+    private static float curveY(float s, float off) {
+        float u = 1.0F - s;
+        return u * u * curveOy + 2.0F * u * s * curveCy + s * s * curveTy + curveNy * off;
+    }
+
+    /** The fist on the end of the chain just drawn: it balloons when it hits, and its fingers never sit still. */
+    private static void fist(Fx fx, float size, int hit, int color, int now, int beat) {
+        int last = JOINTS - 1;
+        float swell = hit == 0 ? 2.1F : (hit == 1 ? 1.5F : 1.0F);
+        float fist = size * swell * (beat % 2 == 0 ? 1.0F : 1.12F);
+        float heading = (float)Math.atan2((double)(JY[last] - JY[last - 1]), (double)(JX[last] - JX[last - 1]));
+        if (hit == 0 || hit == 1) {
+            spike(JX[last], JY[last], fist * (hit == 0 ? 2.6F : 3.4F), fist * 1.1F, 9, (float)now * 0.9F, SOLID | 0xFFFFFF);
+        }
+
+        blob(JX[last], JY[last], fist, color);
+
+        for (int f = 0; f < 3; f++) {
+            float spread = ((float)f - 1.0F) * 0.8F + (float)hash(fx.seed, f, now) * 0.7F;
+            float out = fist * (1.0F + 0.4F * (float)Math.abs(hash(fx.seed + 5L, f, now)));
+            blob(JX[last] + (float)Math.cos((double)(heading + spread)) * out, JY[last] + (float)Math.sin((double)(heading + spread)) * out, fist * 0.42F, color);
+        }
+    }
+
+    /** Whatever is travelling along the chain just drawn. */
+    private static void pellets(int slot, float reach) {
+        float sc = scale();
+
+        for (Pellet pellet : PELLETS) {
+            if (pellet.slot != slot) {
+                continue;
+            }
+
+            float s = MathHelper.clamp(pellet.along, 0.0F, 1.0F) * reach;
+            float px = curveX(s, pellet.side * 30.0F * sc);
+            float py = curveY(s, pellet.side * 30.0F * sc);
+            float size = (float)(cell * 2);
+            box(px - size * 0.5F, py - size * 0.5F, px + size * 0.5F, py + size * 0.5F, SOLID | pellet.color);
+        }
+    }
+
+    /** The arm of mass that comes out of the edge of the screen and grips its work. */
+    private static void arm(MinecraftClient client, Fx fx, int now, int beat, int width, int height) {
+        float sc = scale();
+        boolean drain = fx.slot == HostNetworking.SLOT_DRAIN;
+        boolean point = fx.slot == HostNetworking.SLOT_POINT;
+        boolean heavy = fx.slot == HostNetworking.SLOT_SHOVE || fx.slot == HostNetworking.SLOT_YANK;
+        float ox = (float)width + 14.0F * sc;
+        float oy = (float)height * (drain ? 0.72F : 0.5F + 0.11F * (float)(fx.slot % 3));
+        float side = 1.0F;
+        if (heavy) {
+            // The big one comes up from under the picture, like a punch.
+            ox = (float)width * 0.5F + (float)hash(fx.seed, 1, 1) * (float)width * 0.2F;
+            oy = (float)height + 16.0F * sc;
+            side = -0.5F;
+        }
+
+        float[] tip = project(current(fx, client));
         float reach = fx.age >= 100 ? 1.0F : Math.min(1.0F, (float)(fx.age + 1) / 2.0F);
         if (fx.life <= 2) {
             reach = Math.min(reach, (float)fx.life / 3.0F);
+        }
+
+        if (reach <= 0.02F || point && fx.life < 8 && fx.life % 2 == 0) {
+            return;
+        }
+
+        float thick = point ? 0.4F : (heavy ? 1.4F : (fx.slot == HostNetworking.SLOT_POKE ? 0.7F : 1.0F));
+        chain(fx, ox, oy, tip[0], tip[1], reach, thick, drain || fx.slot == HostNetworking.SLOT_YANK ? 1.0F : -1.0F, now, beat, fx.color, 0, side);
+        int last = JOINTS - 1;
+        if (point) {
+            // No fist: a finger, and rings going out from what it points at.
+            float ring = (float)Math.floorMod(now, 8) / 8.0F;
+            hoop(JX[last], JY[last], (10.0F + 26.0F * ring) * sc, 1.0F, 3.0F * sc, SOLID | fx.color);
+            hoop(JX[last], JY[last], (10.0F + 26.0F * ((ring + 0.5F) % 1.0F)) * sc, 1.0F, 2.0F * sc, SOLID | 0xFFFFFF);
+            spike(JX[last], JY[last], 13.0F * sc, 4.0F * sc, 4, (float)(beat % 2) * 0.785F, SOLID | 0xFFFFFF);
+            blob(JX[last], JY[last], 5.0F * sc, fx.color);
+            return;
+        }
+
+        int hit = fx.punch >= 0 && fx.punch <= 1 && reach >= 1.0F ? fx.punch : 2;
+        fist(fx, 15.0F * sc * thick * Math.min(1.0F, reach * 1.2F), hit, fx.color, now, beat);
+        pellets(fx.slot, reach);
+    }
+
+    /** Fetching from a container: the arm takes hold of it, and the item itself comes back along the arm. */
+    private static void grab(Fx fx, int now, int beat, int width, int height) {
+        float sc = scale();
+        float[] tip = project(fx.pos);
+        float reach = fx.age < 3 ? (float)(fx.age + 1) / 3.0F : 1.0F;
+        if (fx.life <= 3) {
+            reach = Math.min(reach, (float)fx.life / 4.0F);
         }
 
         if (reach <= 0.02F) {
             return;
         }
 
-        int joints = 22;
-        float[] xs = new float[joints];
-        float[] ys = new float[joints];
-        float[] rs = new float[joints];
-        float flow = drain ? 1.0F : -1.0F;
-        // Sometimes a stretch of the arm simply is not there for a beat.
-        int torn = hash(fx.seed, beat, 9) > 0.36 ? 4 + (int)((hash(fx.seed, beat, 10) + 0.5) * 12.0) : -9;
+        boolean hauling = fx.age >= 4 && fx.age <= 15;
+        chain(fx, (float)width + 14.0F * sc, (float)height * 0.62F, tip[0], tip[1], reach, 1.0F, fx.age >= 4 ? 1.0F : -1.0F, now, beat, fx.color, 0, 1.0F);
+        fist(fx, 15.0F * sc * Math.min(1.0F, reach * 1.2F), fx.age == 3 ? 0 : (fx.age == 4 ? 1 : 2), fx.color, now, beat);
+        pellets(SLOT_HAUL, reach);
+        if (hauling && fx.entityId >= 0) {
+            // On twos, like everything else here.
+            float s = 1.0F - (float)((fx.age - 4) / 2 * 2) / 11.0F;
+            float x = curveX(s, (float)hash(fx.seed, fx.age / 2, 3) * 10.0F * sc);
+            float y = curveY(s, (float)hash(fx.seed, fx.age / 2, 4) * 10.0F * sc);
+            spike(x, y, 30.0F * sc, 11.0F * sc, 7, (float)now * 0.7F, SOLID | 0xFFFFFF);
+            blob(x, y, 15.0F * sc, GOLD);
+            ICONS.add(new float[]{(float)fx.entityId, x, y, 2.4F * sc, (float)hash(fx.seed, fx.age / 2, 5) * 50.0F});
+        }
+    }
 
-        for (int i = 0; i < joints; i++) {
-            float s = (float)i / (float)(joints - 1) * reach;
-            float u = 1.0F - s;
-            float sway = (float)hash(fx.seed, i, beat) * 9.0F * sc * (float)Math.sin(Math.PI * (double)s);
-            xs[i] = u * u * ox + 2.0F * u * s * cx + s * s * tip[0] + nx * sway;
-            ys[i] = u * u * oy + 2.0F * u * s * cy + s * s * tip[1] + ny * sway;
-            float base = MathHelper.lerp((float)Math.pow((double)s, 0.7), 26.0F, 9.0F) * sc;
-            // Lumps travel along it: mass pumped out to the work, or drunk back.
-            int phase = Math.floorMod(i + (int)flow * now, 5);
-            rs[i] = base + (phase == 0 ? 8.0F : (phase == 1 ? 4.0F : 0.0F)) * sc;
+    /** Trading places: an arm from each side closes on the target; on the tick of the trade they cross the whole picture. */
+    private static void swap(MinecraftClient client, Fx fx, int now, int beat, int width, int height) {
+        float sc = scale();
+        float[] tip = project(current(fx, client));
+        float reach = fx.age < 2 ? (float)(fx.age + 1) / 2.0F : 1.0F;
+        if (fx.life <= 3) {
+            reach = Math.min(reach, (float)fx.life / 4.0F);
         }
 
-        for (int i = 0; i + 1 < joints; i++) {
-            if (i == torn || i == torn + 1) {
+        int since = fx.age - fx.slot;
+        if (since == 0 || since == 1) {
+            // The wrench itself: two bands of the mass thrown corner to corner.
+            float wide = (since == 0 ? 30.0F : 18.0F) * sc;
+            limb(-20.0F, -20.0F, wide, (float)width + 20.0F, (float)height + 20.0F, wide, MAGENTA);
+            limb(-20.0F, (float)height + 20.0F, wide, (float)width + 20.0F, -20.0F, wide, CYAN);
+            stroke(-20.0F, -20.0F, (float)width + 20.0F, (float)height + 20.0F, wide * 0.25F, SOLID | 0xFFFFFF);
+            stroke(-20.0F, (float)height + 20.0F, (float)width + 20.0F, -20.0F, wide * 0.25F, SOLID | 0xFFFFFF);
+        }
+
+        if (reach <= 0.02F) {
+            return;
+        }
+
+        boolean gripping = fx.age >= 2;
+        int hit = fx.age == 2 || since == 0 ? 0 : (fx.age == 3 || since == 1 ? 1 : 2);
+        float squeeze = gripping ? 4.0F * sc : 18.0F * sc;
+        chain(fx, -14.0F * sc, (float)height * 0.6F, tip[0] - squeeze, tip[1], reach, 1.15F, -1.0F, now, beat, MAGENTA, 1, -1.0F);
+        fist(fx, 15.0F * sc * Math.min(1.0F, reach * 1.2F), hit, MAGENTA, now, beat);
+        chain(fx, (float)width + 14.0F * sc, (float)height * 0.6F, tip[0] + squeeze, tip[1], reach, 1.15F, -1.0F, now, beat, CYAN, 2, 1.0F);
+        fist(fx, 15.0F * sc * Math.min(1.0F, reach * 1.2F), hit, CYAN, now, beat);
+    }
+
+    /** Strings let down from above onto a creature: a puppet's three with their bar, or a single hook that lifts. */
+    private static void strings(MinecraftClient client, Fx fx, int now, int beat) {
+        Entity entity = fx.entityId >= 0 && client.world != null ? client.world.getEntityById(fx.entityId) : null;
+        Vec3d top = entity != null ? entity.getPos().add(0.0, (double)entity.getHeight(), 0.0) : fx.pos;
+        if (entity != null) {
+            fx.pos = top;
+        }
+
+        float[] head = project(top);
+        if (head[2] == 0.0F || fx.life < 8 && fx.life % 2 == 0) {
+            return;
+        }
+
+        float sc = scale();
+        int count = Math.max(1, fx.slot);
+        double distance = Math.sqrt(top.squaredDistanceTo(cameraPos));
+        float spread = MathHelper.clamp((float)(170.0 / Math.max(2.0, distance)), 5.0F, 34.0F) * sc;
+        float grown = Math.min(1.0F, (float)(fx.age + 1) / 3.0F);
+        float barX = head[0] + (float)hash(fx.seed, beat / 3, 1) * 16.0F * sc;
+        float barY = 7.0F * sc;
+        float tilt = (float)hash(fx.seed, beat / 2, 2) * 9.0F * sc;
+        if (count > 1) {
+            // The control bar, rocking in a hand that is not shown.
+            stroke(barX - 38.0F * sc, barY - tilt, barX + 38.0F * sc, barY + tilt, 3.5F * sc, SOLID | fx.color);
+            stroke(barX, barY - 10.0F * sc, barX, barY + 12.0F * sc, 3.0F * sc, SOLID | fx.color);
+        }
+
+        for (int i = 0; i < count; i++) {
+            float off = count == 1 ? 0.0F : (float)i - (float)(count - 1) * 0.5F;
+            if (hash(fx.seed + (long)i, beat, 5) > 0.42) {
+                // A string that is not there this beat.
                 continue;
             }
 
-            limb(xs[i], ys[i], rs[i], xs[i + 1], ys[i + 1], rs[i + 1], fx.color);
+            float sx = barX + off * 34.0F * sc;
+            float sy = count > 1 ? barY + off * tilt : -6.0F;
+            float ex = head[0] + off * spread;
+            float ey = head[1] + (off == 0.0F ? 0.0F : spread * 0.9F);
+            ex = sx + (ex - sx) * grown;
+            ey = sy + (ey - sy) * grown;
+            float mx = (sx + ex) * 0.5F + (float)hash(fx.seed + (long)i, beat, 3) * 6.0F * sc;
+            float my = (sy + ey) * 0.5F;
+            stroke(sx, sy, mx, my, 1.2F * sc, SOLID | fx.color);
+            stroke(mx, my, ex, ey, 1.2F * sc, SOLID | fx.color);
+            // A bead of the mass running down each string.
+            float bead = (float)Math.floorMod(now * 2 + i * 7, 16) / 16.0F;
+            float bx = bead < 0.5F ? MathHelper.lerp(bead * 2.0F, sx, mx) : MathHelper.lerp(bead * 2.0F - 1.0F, mx, ex);
+            float by = bead < 0.5F ? MathHelper.lerp(bead * 2.0F, sy, my) : MathHelper.lerp(bead * 2.0F - 1.0F, my, ey);
+            blob(bx, by, 3.2F * sc, 0xFFFFFF);
+            // The hook.
+            spike(ex, ey, 8.0F * sc, 2.5F * sc, 4, (float)(beat % 2) * 0.785F, SOLID | 0xFFFFFF);
+            blob(ex, ey, 3.5F * sc, fx.color);
+        }
+    }
+
+    /** Speed lines: everything streaks past for a few ticks. */
+    private static void rush(Fx fx, int now, int width, int height) {
+        float sc = scale();
+        if (fx.life <= 2 && fx.life % 2 == 0) {
+            return;
         }
 
-        // A drip off its belly.
-        int mid = joints / 2;
-        blob(xs[mid], ys[mid] + rs[mid] * (1.0F + 0.5F * (float)(beat % 3)), rs[mid] * 0.4F, fx.color);
-        // The fist: it balloons on the tick it hits, then snaps back.
-        int last = joints - 1;
-        float hit = fx.punch == 0 ? 2.1F : (fx.punch == 1 ? 1.5F : 1.0F);
-        float fist = 15.0F * sc * hit * (beat % 2 == 0 ? 1.0F : 1.12F) * Math.min(1.0F, reach * 1.2F);
-        float heading = (float)Math.atan2((double)(ys[last] - ys[last - 1]), (double)(xs[last] - xs[last - 1]));
-        if (fx.punch >= 0 && fx.punch <= 1 && reach >= 1.0F) {
-            spike(xs[last], ys[last], fist * (fx.punch == 0 ? 2.6F : 3.4F), fist * 1.1F, 9, (float)now * 0.9F, SOLID | 0xFFFFFF);
-        }
-
-        blob(xs[last], ys[last], fist, fx.color);
-
-        for (int f = 0; f < 3; f++) {
-            float spread = ((float)f - 1.0F) * 0.8F + (float)hash(fx.seed, f, now) * 0.7F;
-            float out = fist * (1.0F + 0.4F * (float)Math.abs(hash(fx.seed + 5L, f, now)));
-            blob(xs[last] + (float)Math.cos((double)(heading + spread)) * out, ys[last] + (float)Math.sin((double)(heading + spread)) * out, fist * 0.42F, fx.color);
-        }
-
-        for (Pellet pellet : PELLETS) {
-            if (pellet.slot != fx.slot) {
-                continue;
+        float cx = (float)width * 0.5F;
+        float cy = (float)height * 0.5F;
+        if (fx.slot == 0) {
+            for (int i = 0; i < 30; i++) {
+                double a = (double)i / 30.0 * Math.PI * 2.0 + hash(fx.seed, i, now) * 0.25;
+                float near = (55.0F + (float)(hash(fx.seed, i + 40, now) + 0.5) * 110.0F + (float)fx.age * 18.0F) * sc;
+                float far = (float)Math.max(width, height);
+                stroke(cx + (float)Math.cos(a) * near, cy + (float)Math.sin(a) * near, cx + (float)Math.cos(a) * far, cy + (float)Math.sin(a) * far, (1.2F + (float)(i % 3)) * sc, BARE | (i % 3 == 0 ? fx.color : 0xFFFFFF));
+            }
+        } else {
+            // Wound back like tape: bars tearing sideways across the picture.
+            for (int i = 0; i < 14; i++) {
+                float y = (float)(hash(fx.seed, i, now) + 0.5) * (float)height;
+                float from = (float)(hash(fx.seed, i + 20, now) + 0.5) * (float)width * 0.6F;
+                float thickness = (1.5F + (float)(i % 4) * 1.5F) * sc;
+                stroke(from, y, from + (float)width * (0.3F + 0.5F * (float)(hash(fx.seed, i + 60, now) + 0.5)), y, thickness, BARE | (i % 3 == 0 ? 0xFFFFFF : (i % 3 == 1 ? MAGENTA : fx.color)));
             }
 
-            float s = MathHelper.clamp(pellet.along, 0.0F, 1.0F) * reach;
-            float u = 1.0F - s;
-            float px = u * u * ox + 2.0F * u * s * cx + s * s * tip[0] + nx * pellet.side * 30.0F * sc;
-            float py = u * u * oy + 2.0F * u * s * cy + s * s * tip[1] + ny * pellet.side * 30.0F * sc;
-            float size = (float)(cell * 2);
-            box(px - size * 0.5F, py - size * 0.5F, px + size * 0.5F, py + size * 0.5F, SOLID | pellet.color);
+            // Two chevrons pointing back the way the Host came.
+            for (int k = 0; k < 2; k++) {
+                float x = cx - 20.0F * sc + (float)k * 46.0F * sc - (float)(now % 2) * 8.0F * sc;
+                stroke(x + 26.0F * sc, cy - 30.0F * sc, x, cy, 6.0F * sc, SOLID | 0xFFFFFF);
+                stroke(x, cy, x + 26.0F * sc, cy + 30.0F * sc, 6.0F * sc, SOLID | 0xFFFFFF);
+            }
         }
     }
 
