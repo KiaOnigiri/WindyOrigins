@@ -518,10 +518,12 @@ public final class VoltaChat {
             }
         }
 
-        if (command == null) {
-            // "покопай", "постреляй", "насобирай": the same verbs under a Russian prefix.
+        {
+            // "покопай", "постреляй", "насобирай": the same verbs under a Russian prefix. They also win over a
+            // word further on that merely looks like an order: in "накопай светокамень" the order is to dig.
+            int before = command == null ? tokens.length : Math.min(at, tokens.length);
             search:
-            for (int i = 0; i < tokens.length; i++) {
+            for (int i = 0; i < before; i++) {
                 String token = tokens[i];
                 if (!cyrillic(token)) {
                     continue;
@@ -578,6 +580,8 @@ public final class VoltaChat {
 
         int number = -1;
         List<String> subject = new ArrayList<>();
+        // These take the name of a thing, and a thing may be called like an order: a torch ("факел") is not "light!".
+        boolean names = command == HostCommand.DIG || command == HostCommand.HARVEST || command == HostCommand.MAGNET || command == HostCommand.FETCH;
 
         for (int i = 0; i < tokens.length; i++) {
             String token = tokens[i];
@@ -587,7 +591,20 @@ public final class VoltaChat {
                 int value = NUMBERS.get(token);
                 // "двадцать пять", "twenty five".
                 number = number >= 20 && number % 10 == 0 && value < 10 && i > 0 && NUMBERS.containsKey(tokens[i - 1]) ? number + value : value;
-            } else if (i != at && !FILLER.contains(token) && !carriesVerb(token)) {
+            } else if (cjk(token)) {
+                // Written without spaces, the order is stuck to what it is about: "挖石头", "剣を拾って".
+                String[] verbs = VERBS.get(command);
+
+                for (String word : verbs == null ? new String[0] : verbs) {
+                    if (cjk(word)) {
+                        token = token.replace(word, "");
+                    }
+                }
+
+                if (!token.isEmpty()) {
+                    subject.add(token);
+                }
+            } else if (i != at && !FILLER.contains(token) && !(names ? carriesVerbOf(token, command) : carriesVerb(token))) {
                 subject.add(token);
             }
         }
@@ -652,8 +669,77 @@ public final class VoltaChat {
         "metr", "tunel", "schacht", "treppe", "geradeaus", "vorwarts", "escalier", "puits", "avant$", "escalera", "pozo$", "adelante", "escada", "poco$", "frente",
         "szyb", "schod", "prosto", "naprzod", "ブロック", "メートル", "トンネル", "階段", "隧道", "楼梯",
         // "сруби это дерево", "выбери жилу": the tree or the vein under the crosshair, not a block by that name.
+        // "добудь мне золото": for whom is not what.
+        "мне$", "мені$", "мени$", "нам$", "me$", "us$", "mir$", "uns$", "moi$", "nous$", "mnie$", "nam$", "mim$", "пожалуйста", "плиз", "please", "bitte",
         "дерев", "жил", "tree", "vein", "baum", "ader$", "arbol", "veta$", "arbre", "filon", "arvore", "veio$", "drzew", "zyle", "zyla"
     };
+
+    // Words that go with picking things up and name nothing: "подбери все предметы", "pick up everything here".
+    private static final String[] NOT_LOOT = new String[]{
+        "все$", "всю$", "весь$", "усе$", "всi$", "всі$", "предмет", "вещ", "реч", "лут", "дроп", "шмот", "барахл", "добыч", "тут$", "здесь", "там$", "это$", "эти$",
+        "этот", "эту$", "мне$", "мені$", "мени$", "нам$", "пожалуйста", "плиз", "all$", "everything", "every$", "item", "thing", "stuff", "loot", "drop", "up$",
+        "it$", "them$", "me$", "us$", "here", "there", "that$", "those", "these", "this$", "please", "alles", "alle$", "allen$", "sachen", "gegenstand", "auf$",
+        "mir$", "uns$", "bitte", "hier", "tout$", "tous$", "toutes", "toute$", "objet", "chose", "moi$", "ici$", "todo$", "todos$", "todas$", "toda$", "objeto",
+        "cosa", "aqui", "tudo", "itens", "coisa", "mim$", "wszystk", "przedmiot", "rzecz", "mnie$", "tutaj", "全部", "すべて", "全て", "アイテム", "を", "物品",
+        "所有", "东西", "起来", "起", "的"
+    };
+    private static final String[] OFF_THE_GROUND = new String[]{
+        " с земли", " с пола", " з землі", " з підлоги", " from the ground", " off the ground", " from the floor", " off the floor", " vom boden", " du sol",
+        " par terre", " del suelo", " do chao", " z ziemi", " z podlogi"
+    };
+
+    /** What is left of the subject of a picking-up request once "all", "items" and "from the ground" are out: the name of a thing, or nothing. */
+    public static String loot(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return "";
+        }
+
+        String text = " " + normalize(subject);
+
+        for (String phrase : OFF_THE_GROUND) {
+            text = text.replace(phrase, " ");
+        }
+
+        StringBuilder out = new StringBuilder();
+
+        outer:
+        for (String token : text.trim().split(" ")) {
+            if (token.isEmpty()) {
+                continue;
+            }
+
+            if (cjk(token)) {
+                // Written without spaces, the verb and "all" are stuck to the name: "捡剑", "アイテムを全部拾って".
+                for (String word : VERBS.get(HostCommand.MAGNET)) {
+                    if (cjk(word)) {
+                        token = token.replace(word, "");
+                    }
+                }
+
+                for (String word : NOT_LOOT) {
+                    if (cjk(word)) {
+                        token = token.replace(word, "");
+                    }
+                }
+
+                if (token.isEmpty()) {
+                    continue;
+                }
+            } else {
+                String[] one = new String[]{token};
+
+                for (String word : NOT_LOOT) {
+                    if (!cjk(word) && find(token, one, word) >= 0) {
+                        continue outer;
+                    }
+                }
+            }
+
+            out.append(out.length() > 0 ? " " : "").append(token);
+        }
+
+        return out.toString();
+    }
 
     /** What is left of the subject of a digging request once the directions and measures are out: the name of a block, or nothing. */
     public static String thing(String subject) {
@@ -691,12 +777,26 @@ public final class VoltaChat {
         return out.toString();
     }
 
+    private static boolean carriesVerbOf(String token, HostCommand command) {
+        String[] one = new String[]{token};
+        String[] words = VERBS.get(command);
+
+        for (String word : words == null ? new String[0] : words) {
+            if (word.indexOf(' ') < 0 && !cjk(word) && find(token, one, word) == 0 && !guessed) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static boolean carriesVerb(String token) {
         String[] one = new String[]{token};
 
         for (String[] words : VERBS.values()) {
             for (String word : words) {
-                if (word.indexOf(' ') < 0 && !cjk(word) && find(token, one, word) == 0) {
+                if (word.indexOf(' ') < 0 && !cjk(word) && find(token, one, word) == 0 && !guessed) {
+                    // A noun one slip away from some order ("espadas", "escada") is still the noun: only a sure match counts.
                     return true;
                 }
             }
