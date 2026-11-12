@@ -13,6 +13,7 @@ public final class DamageHooks {
     }
 
     public static boolean refuse(LivingEntity var0, DamageSource var1) {
+        HostManager.beforeHurt(var0);
         if (var1.isIn(DamageTypeTags.IS_FALL) && com.windykindy49.windyorigins.revenant.RevenantManager.isEjected(var0)) {
             return true;
         }

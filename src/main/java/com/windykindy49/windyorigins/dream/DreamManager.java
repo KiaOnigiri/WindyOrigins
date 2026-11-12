@@ -70,6 +70,28 @@ public final class DreamManager {
     private static final int MOB_SLEEP = 200;
     private static final int PLAYER_SLEEP = 160;
     private static final long MOB_DREAM_COOLDOWN = 24000L;
+    /** A creature's dreams give up loot this many times in its whole life, then never again. */
+    public static final int MOB_LOOT_LIMIT = 3;
+    private static final String LOOT_TAG = "windyorigins.dream_loot.";
+
+    /** Kept as a tag on the creature itself, so it survives restarts and goes wherever the creature goes. */
+    public static int lootTaken(Entity mob) {
+        for (int n = MOB_LOOT_LIMIT; n > 0; n--) {
+            if (mob.getCommandTags().contains(LOOT_TAG + n)) {
+                return n;
+            }
+        }
+
+        return 0;
+    }
+
+    private static void noteLoot(Entity mob) {
+        int n = lootTaken(mob);
+        if (n < MOB_LOOT_LIMIT) {
+            mob.removeScoreboardTag(LOOT_TAG + n);
+            mob.addCommandTag(LOOT_TAG + (n + 1));
+        }
+    }
     private static final long NEUTRAL_AFTER = 6000L;
     private static final int INSOMNIA = 72000;
     private static final DustParticleEffect DREAM_DUST = new DustParticleEffect(new Vector3f(0.7F, 0.6F, 1.0F), 1.0F);
@@ -192,7 +214,10 @@ public final class DreamManager {
                     }
 
                     long var9 = var3 == null ? 0L : MOB_DREAM_COOLDOWN - (var0.getServer().getOverworld().getTime() - var3);
-                    if (var9 > 0L) {
+                    if (lootTaken(var1) >= MOB_LOOT_LIMIT) {
+                        PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 0.9F);
+                        var0.sendMessage(Text.translatable("message.windyorigins.dream.drained").formatted(Formatting.LIGHT_PURPLE), true);
+                    } else if (var9 > 0L) {
                         PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 1.1F);
                         long var11 = (var9 + 19L) / 20L;
                         var0.sendMessage(
@@ -492,8 +517,34 @@ public final class DreamManager {
     public static void onLeave(ServerPlayerEntity var0) {
         DreamManager.Session var1 = BY_PLAYER.get(var0.getUuid());
         if (var1 != null) {
-            end(var0.getServer(), var1, null, "disconnect");
+            if (var1.kind == DreamManager.Kind.MOB && var1.walkers.size() > 1 && !var1.over) {
+                // A shared mob dream goes on for whoever stays; only the one who left wakes up.
+                var1.walkers.remove(var0.getUuid());
+                DreamBodyEntity var2 = var1.bodies.remove(var0.getUuid());
+                if (var2 != null) {
+                    var2.discard();
+                }
+
+                wake(var0, null);
+            } else {
+                end(var0.getServer(), var1, null, "disconnect");
+            }
         }
+    }
+
+    /** The server is stopping: everyone is woken while the world can still put them back where they slept. */
+    public static void stopping(MinecraftServer var0) {
+        for (DreamManager.Session var2 : new ArrayList<>(SESSIONS.values())) {
+            end(var0, var2, null, "disconnect");
+        }
+    }
+
+    public static void reset() {
+        SESSIONS.clear();
+        BY_PLAYER.clear();
+        MOB_DREAMT.clear();
+        NEUTRAL.clear();
+        DARK_READY.clear();
     }
 
     public static void tick(MinecraftServer var0) {
@@ -571,6 +622,11 @@ public final class DreamManager {
                         // shard hands over its share, however many shards the dream holds.
                         if (var2.lootRoll == null) {
                             var2.lootRoll = rollLoot(var0, var2, var7);
+                            ServerWorld var22 = var0.getWorld(var2.mobWorld);
+                            Entity var23 = var22 == null ? null : var22.getEntity(var2.mob);
+                            if (var23 != null) {
+                                noteLoot(var23);
+                            }
                         }
 
                         var2.collected++;

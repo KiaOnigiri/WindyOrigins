@@ -23,7 +23,11 @@ public enum HostPrank {
     SHUFFLE,
     SCREAM,
     FAKE_DEATH,
-    RUBBERBAND;
+    RUBBERBAND,
+    SHOVE,
+    DROP,
+    BLACKOUT,
+    WHISTLE;
 
     public String key() {
         return this.name().toLowerCase(Locale.ROOT);

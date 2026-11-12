@@ -25,6 +25,15 @@ public final class FoldedClient {
     /** Fast enough to get down in a hurry, slow enough to land unhurt. */
     private static final double GLIDE_FALL = -0.55;
     private static int mode;
+    private static final org.joml.Matrix4f PROJECTION = new org.joml.Matrix4f();
+    private static final org.joml.Matrix4f VIEW = new org.joml.Matrix4f();
+    private static Vec3d cameraPos = Vec3d.ZERO;
+    private static boolean captured;
+    private static int aimId = -1;
+    private static Vec3d aimPos = Vec3d.ZERO;
+    private static int aimLeft;
+    private static int aimFire;
+    private static int aimAge;
 
     private FoldedClient() {
     }
@@ -38,7 +47,32 @@ public final class FoldedClient {
             int var4 = var2.readByte();
             var0.execute(() -> mode = var4);
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((var0, var1) -> mode = 0);
+        ClientPlayNetworking.registerGlobalReceiver(FoldedManager.AIM, (client, handler, buf, sender) -> {
+            int id = buf.readInt();
+            Vec3d pos = new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble());
+            int fire = buf.readByte();
+            client.execute(() -> {
+                if (aimLeft <= 0 || aimId != id) {
+                    aimAge = 0;
+                }
+
+                aimId = id;
+                aimPos = pos;
+                aimFire = fire;
+                aimLeft = 5;
+            });
+        });
+        ClientPlayConnectionEvents.DISCONNECT.register((var0, var1) -> {
+            mode = 0;
+            aimLeft = 0;
+        });
+        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_ENTITIES.register(context -> {
+            PROJECTION.set(context.projectionMatrix());
+            VIEW.set(context.matrixStack().peek().getPositionMatrix());
+            cameraPos = context.camera().getPos();
+            captured = true;
+        });
+        HudRenderCallback.EVENT.register(FoldedClient::renderGlint);
         ClientTickEvents.END_CLIENT_TICK.register(FoldedClient::tick);
         HudRenderCallback.EVENT.register(FoldedClient::renderScope);
         FoldedManager.clientShot = FoldedClient::reportShot;
@@ -78,7 +112,77 @@ public final class FoldedClient {
         ClientPlayNetworking.send(FoldedManager.SHOT, var8);
     }
 
+    /**
+     * The scope glint: a hard little star pinned to wherever the rifle is, seen by whoever it is
+     * pointed at. It swells while the charge finishes and strobes once the shot can come at any moment.
+     */
+    private static void renderGlint(DrawContext context, float tickDelta) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (aimLeft <= 0 || !captured || client.world == null || client.player == null || client.options.hudHidden) {
+            return;
+        }
+
+        net.minecraft.entity.Entity shooter = client.world.getEntityById(aimId);
+        Vec3d at = shooter != null ? shooter.getCameraPosVec(tickDelta) : aimPos;
+        int w = context.getScaledWindowWidth();
+        int h = context.getScaledWindowHeight();
+        org.joml.Vector4f v = new org.joml.Vector4f((float)(at.x - cameraPos.x), (float)(at.y - cameraPos.y), (float)(at.z - cameraPos.z), 1.0F);
+        v.mul(VIEW);
+        v.mul(PROJECTION);
+        float sx;
+        float sy;
+        boolean front = v.w > 0.05F;
+        if (front) {
+            sx = (v.x / v.w * 0.5F + 0.5F) * (float)w;
+            sy = (1.0F - (v.y / v.w * 0.5F + 0.5F)) * (float)h;
+        } else {
+            float len = Math.max(0.001F, (float)Math.sqrt((double)(v.x * v.x + v.y * v.y)));
+            sx = (float)w * 0.5F + v.x / len * (float)w;
+            sy = (float)h * 0.5F - v.y / len * (float)h;
+        }
+
+        int margin = 14;
+        boolean onScreen = front && sx >= (float)margin && sx <= (float)(w - margin) && sy >= (float)margin && sy <= (float)(h - margin);
+        int x = (int)Math.max((float)margin, Math.min((float)(w - margin), sx));
+        int y = (int)Math.max((float)margin, Math.min((float)(h - margin), sy));
+        boolean ready = aimFire <= 0;
+        int beat = aimAge / 2;
+        float progress = 1.0F - Math.min(1.0F, (float)aimFire / (float)FoldedManager.WARN_TICKS);
+        int size = 5 + (int)(7.0F * progress) + (ready && beat % 2 == 0 ? 3 : 0);
+        int ray = ready && beat % 2 == 0 ? 0xFFFFFFFF : (ready ? 0xFFFF6A9A : 0xFFD2B4FF);
+        int halo = ready ? 0x66FF6A9A : 0x559A72FF;
+        if (!onScreen) {
+            // Out of view: a block on the edge of the screen, on the side the rifle is.
+            if (beat % 2 == 0 || !ready) {
+                context.fill(x - 5, y - 5, x + 6, y + 6, halo);
+                context.fill(x - 3, y - 3, x + 4, y + 4, ray);
+                context.fill(x - 1, y - 1, x + 2, y + 2, 0xFF2A1450);
+            }
+
+            return;
+        }
+
+        context.fill(x - 3, y - 3, x + 4, y + 4, halo);
+        context.fill(x - size, y, x + size + 1, y + 1, ray);
+        context.fill(x, y - size, x + 1, y + size + 1, ray);
+        int diagonal = size / 2;
+
+        for (int i = 1; i <= diagonal; i++) {
+            context.fill(x + i, y + i, x + i + 1, y + i + 1, ray);
+            context.fill(x - i, y + i, x - i + 1, y + i + 1, ray);
+            context.fill(x + i, y - i, x + i + 1, y - i + 1, ray);
+            context.fill(x - i, y - i, x - i + 1, y - i + 1, ray);
+        }
+
+        context.fill(x - 1, y - 1, x + 2, y + 2, 0xFFFFFFFF);
+    }
+
     private static void tick(MinecraftClient var0) {
+        if (aimLeft > 0 && !var0.isPaused()) {
+            aimLeft--;
+            aimAge++;
+        }
+
         ClientPlayerEntity var1 = var0.player;
         if (var1 == null || mode == 0 || var0.isPaused()) {
             return;

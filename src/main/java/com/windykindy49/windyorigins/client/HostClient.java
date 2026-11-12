@@ -287,6 +287,7 @@ public final class HostClient {
             case HUD, MIRROR -> 120;
             case DANCE, FISHEYE, STEPS -> 100;
             case INVERT -> 140;
+            case BLACKOUT -> 100;
             case GLITCH -> 80;
             case TEASE, WINK, FAKE_DEATH -> 60;
             case HISS -> 50;
@@ -297,8 +298,8 @@ public final class HostClient {
 
         byte var4 = switch (var1) {
             case HUD, TEASE, SLOT, SHUFFLE, RUBBERBAND -> 1;
-            case DANCE, WINK, FISHEYE, JUMP -> 6;
-            case MIRROR, HISS, HURT, GLITCH, INVERT, SPIN, FAKE_DEATH -> 5;
+            case DANCE, WINK, FISHEYE, JUMP, SHOVE, DROP, WHISTLE -> 6;
+            case MIRROR, HISS, HURT, GLITCH, INVERT, SPIN, FAKE_DEATH, BLACKOUT -> 5;
             case SCREAM -> 4;
             default -> 0;
         };
@@ -917,7 +918,8 @@ public final class HostClient {
             case SPIN, RUBBERBAND -> "↻";
             case JUMP -> "↑";
             case INVERT, SHUFFLE -> "⇄";
-            case SCREAM, FAKE_DEATH -> "!";
+            case SCREAM, FAKE_DEATH, SHOVE, BLACKOUT, WHISTLE -> "!";
+            case DROP -> "?";
             case GIFT -> "♥";
         };
         float var16 = MathHelper.clamp((var5 - 5.0F) / 5.0F, 0.0F, 1.0F);

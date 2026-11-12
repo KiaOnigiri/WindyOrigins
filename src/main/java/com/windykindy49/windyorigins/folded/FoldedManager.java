@@ -69,6 +69,11 @@ public final class FoldedManager {
     public static final int MODE_GLIDE = 2;
     public static final Identifier HOVER_SYNC = new Identifier("windyorigins", "folded_hover");
     public static final Identifier SHOT = new Identifier("windyorigins", "folded_shot");
+    public static final Identifier AIM = new Identifier("windyorigins", "folded_aim");
+    /** For this long before the rifle is ready, anyone near the line of fire sees the scope glint. */
+    public static final int WARN_TICKS = 10;
+    /** The glint is seen about six degrees either side of the crosshair, so a last-instant flick still gives it away. */
+    private static final double WARN_SPREAD = 0.105;
     public static final RegistryKey<DamageType> SHOT_DAMAGE_TYPE = RegistryKey.of(RegistryKeys.DAMAGE_TYPE, new Identifier("windyorigins", "fold_shot"));
     public static final Item RIFLE = Registry.register(
         Registries.ITEM, new Identifier("windyorigins", "fold_rifle"), new FoldRifleItem(new Settings().maxCount(1))
@@ -83,6 +88,7 @@ public final class FoldedManager {
     private static final Map<UUID, Integer> HOVER_SINCE = new HashMap<>();
     private static final Map<UUID, Integer> PENDING = new HashMap<>();
     private static final Map<UUID, FoldedManager.Knot> KNOTS = new HashMap<>();
+    private static final Map<UUID, Long> WARNED = new HashMap<>();
 
     private FoldedManager() {
     }
@@ -122,6 +128,13 @@ public final class FoldedManager {
             if (var7 != null && var2.age - var7 > 5) {
                 PENDING.remove(var6);
                 shoot(var2, -1, null, null);
+            }
+
+            if (var3 && var2.age % 2 == 0 && var2.isUsingItem() && isRifle(var2.getActiveItem())) {
+                int var9 = FoldRifleItem.CHARGE_TICKS - var2.getItemUseTime();
+                if (var9 <= WARN_TICKS) {
+                    warn(var2, Math.max(0, var9));
+                }
             }
 
             if (!var3) {
@@ -194,6 +207,52 @@ public final class FoldedManager {
             if (var2.insertStack(var6)) {
                 PhaseFx.sound(var0, WindySounds.FOLD_RIFLE, SoundCategory.PLAYERS, 0.8F, 1.0F);
                 PhaseFx.particles(var0, ParticleTypes.REVERSE_PORTAL, var0.getX(), var0.getBodyY(0.6), var0.getZ(), 30, 0.3, 0.4, 0.3, 0.05);
+            }
+        }
+    }
+
+    /**
+     * The rifle cannot be levelled at someone unseen: for the last half second of the charge, and for
+     * as long as it is held ready, every player near the line of fire sees a glint where the shooter is.
+     */
+    private static void warn(ServerPlayerEntity shooter, int ticksToFire) {
+        ServerWorld world = shooter.getServerWorld();
+        Vec3d eye = shooter.getEyePos();
+        Vec3d look = shooter.getRotationVec(1.0F);
+        long now = world.getTime();
+
+        for (ServerPlayerEntity target : world.getPlayers()) {
+            if (target == shooter || target.isSpectator() || !target.isAlive() || !PhaseFx.samePhase(shooter, target)) {
+                continue;
+            }
+
+            Vec3d to = target.getBoundingBox().getCenter().subtract(eye);
+            double distance = to.length();
+            double along = to.dotProduct(look);
+            if (distance > SHOT_RANGE || along <= 0.5) {
+                continue;
+            }
+
+            double off = Math.sqrt(Math.max(0.0, distance * distance - along * along));
+            if (off > 1.5 + distance * WARN_SPREAD) {
+                continue;
+            }
+
+            if (world.raycast(new RaycastContext(eye, target.getEyePos(), ShapeType.COLLIDER, FluidHandling.NONE, shooter)).getType() != Type.MISS) {
+                continue;
+            }
+
+            PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+            buf.writeInt(shooter.getId());
+            buf.writeDouble(eye.x);
+            buf.writeDouble(eye.y);
+            buf.writeDouble(eye.z);
+            buf.writeByte(ticksToFire);
+            ServerPlayNetworking.send(target, AIM, buf);
+            Long last = WARNED.put(target.getUuid(), now);
+            if (last == null || now - last > 30L) {
+                PhaseFx.privateSound(target, WindySounds.FOLD_CHARGE, 1.0F, 1.9F);
+                target.sendMessage(Text.translatable("message.windyorigins.folded.aimed").formatted(Formatting.LIGHT_PURPLE), true);
             }
         }
     }
@@ -344,12 +403,22 @@ public final class FoldedManager {
         }
     }
 
+    public static void reset() {
+        HOVERING.clear();
+        GLIDING.clear();
+        HOVER_SINCE.clear();
+        PENDING.clear();
+        KNOTS.clear();
+        WARNED.clear();
+    }
+
     public static void forget(ServerPlayerEntity var0) {
         HOVERING.remove(var0.getUuid());
         GLIDING.remove(var0.getUuid());
         HOVER_SINCE.remove(var0.getUuid());
         PENDING.remove(var0.getUuid());
         KNOTS.remove(var0.getUuid());
+        WARNED.remove(var0.getUuid());
     }
 
     public static void step(ServerPlayerEntity var0) {

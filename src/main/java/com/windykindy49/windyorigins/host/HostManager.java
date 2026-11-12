@@ -120,8 +120,37 @@ public final class HostManager {
         return STATES.computeIfAbsent(var0.getUuid(), var0x -> new HostManager.State());
     }
 
+    /**
+     * Logging out stops whatever Volta was in the middle of, but not her cooldowns: those are kept,
+     * or a quick relog would reset every command and the quiet-mode wait.
+     */
     public static void forget(ServerPlayerEntity var0) {
-        STATES.remove(var0.getUuid());
+        HostManager.State var1 = STATES.get(var0.getUuid());
+        if (var1 != null) {
+            var1.work.clear();
+            var1.later.clear();
+            var1.trail.clear();
+            var1.healthTrail.clear();
+            var1.trailWorld = null;
+            var1.magnetEnds = 0L;
+            var1.decoyEnds = 0L;
+            var1.siphonEnds = 0L;
+            var1.turretEnds = 0L;
+            var1.warpEnds = 0L;
+            var1.shieldEnds = 0L;
+            var1.healthBefore = 0.0F;
+            var1.listenUntil = 0L;
+        }
+    }
+
+    public static void reset() {
+        STATES.clear();
+        TURNED.clear();
+        TURNED_OWNER.clear();
+        BLINDED.clear();
+        DISTRACTED.clear();
+        DISTRACTED_OWNER.clear();
+        VIRUS.clear();
     }
 
     public static void say(ServerPlayerEntity var0, String var1, int var2, Object... var3) {
@@ -161,7 +190,26 @@ public final class HostManager {
         HostNetworking.fx(var0, HostNetworking.FX_STOP, 0, -1, var0.getPos(), 0, 0);
     }
 
-    public static final float CHIP_BREAK_CHANCE = 0.1F;
+    /** Each point of damage actually taken is this much chance of cracking the chip... */
+    public static final float CHIP_BREAK_PER_DAMAGE = 0.025F;
+    /** ...up to this much for the heaviest blows. */
+    public static final float CHIP_BREAK_MAX = 0.2F;
+    /** The repair kit has to be held in use this long. */
+    public static final int REPAIR_TICKS = 40;
+
+    public static float chipBreakChance(float taken) {
+        return Math.min(CHIP_BREAK_MAX, Math.max(0.0F, taken) * CHIP_BREAK_PER_DAMAGE);
+    }
+
+    /** Called before a blow lands, so that afterwards it is known how much of it got through the armour. */
+    public static void beforeHurt(LivingEntity victim) {
+        if (victim instanceof ServerPlayerEntity host && !victim.getWorld().isClient()) {
+            HostManager.State st = STATES.get(host.getUuid());
+            if (st != null) {
+                st.healthBefore = host.getHealth() + host.getAbsorptionAmount();
+            }
+        }
+    }
     public static final Item REPAIR_KIT = net.minecraft.registry.Registry.register(
         Registries.ITEM, Powers.id("chip_repair_kit"), new ChipRepairItem(new Item.Settings().maxCount(16))
     );
@@ -177,14 +225,18 @@ public final class HostManager {
 
     public static void onHurt(LivingEntity var0, net.minecraft.entity.damage.DamageSource var1, float var2) {
         if (var0 instanceof ServerPlayerEntity var3 && isHost(var3)) {
-            state(var3).lastHurt = var3.getWorld().getTime();
+            HostManager.State var4 = state(var3);
+            var4.lastHurt = var3.getWorld().getTime();
+            // What counts is what got through: armour and Protection protect the chip as they protect the head.
+            float var5 = var4.healthBefore > 0.0F ? var4.healthBefore - (var3.getHealth() + var3.getAbsorptionAmount()) : var2;
+            var4.healthBefore = 0.0F;
             // Any real blow can crack the chip. The chip's own overheating and hunger cannot.
             if (!selfHarm
-                && var2 >= 1.0F
+                && var5 > 0.0F
                 && !var1.isOf(net.minecraft.entity.damage.DamageTypes.STARVE)
                 && !isBroken(var3)
                 && Powers.has(var3, "chip_broken")
-                && var3.getRandom().nextFloat() < CHIP_BREAK_CHANCE) {
+                && var3.getRandom().nextFloat() < chipBreakChance(var5)) {
                 breakChip(var3);
             }
         }
@@ -550,11 +602,11 @@ public final class HostManager {
                     ServerPlayerEntity var7 = var0.getServer().getPlayerManager().getPlayer(var2.player());
                     if (var7 != null) {
                         findPlayer(var0, var7);
-                        return 15;
+                        return SEARCH_PLAYER - HostCommand.FIND.heat;
                     }
                 }
 
-                return find(var0, var2.subject()) ? 0 : -1;
+                return find(var0, var2.subject());
             case FETCH:
                 return fetch(var0, var2.subject()) ? 0 : -1;
             default:
@@ -1610,15 +1662,54 @@ public final class HostManager {
         return var0.getServer().getPlayerManager().getPlayer(var1.trim()) != null;
     }
 
-    private static boolean find(ServerPlayerEntity var0, String var1) {
+    private static final int SEARCH_PLAYER = 30;
+    private static final int SEARCH_PLAIN = 25;
+    private static final int SEARCH_COMMON = 40;
+    private static final int SEARCH_UNCOMMON = 55;
+    private static final int SEARCH_RARE = 75;
+    private static final int SEARCH_LEGENDARY = 90;
+
+    /**
+     * What looking through the ground for something costs the chip, in heat. The rarer the thing, the
+     * hotter: a search for ancient debris leaves the chip one request from burning out.
+     */
+    static int searchHeat(String path) {
+        if (path.contains("debris") || path.contains("netherite")) {
+            return SEARCH_LEGENDARY;
+        } else if (path.contains("diamond")
+            || path.contains("emerald")
+            || path.contains("chest")
+            || path.contains("barrel")
+            || path.contains("shulker")
+            || path.contains("spawner")
+            || path.contains("beacon")
+            || path.contains("budding")) {
+            return SEARCH_RARE;
+        } else if (path.contains("gold") || path.contains("lapis") || path.contains("redstone") || path.contains("amethyst") || path.contains("obsidian")) {
+            return SEARCH_UNCOMMON;
+        } else {
+            return path.endsWith("_ore") || path.equals("ore") || path.contains("iron") || path.contains("copper") || path.contains("coal") || path.contains("quartz")
+                ? SEARCH_COMMON
+                : SEARCH_PLAIN;
+        }
+    }
+
+    /** Returns the heat on top of the command's own, or -1 when nothing was asked for. */
+    private static int find(ServerPlayerEntity var0, String var1) {
         ServerPlayerEntity var2 = var0.getServer().getPlayerManager().getPlayer(var1.trim());
         if (var2 != null && var2 != var0) {
-            return findPlayer(var0, var2);
+            findPlayer(var0, var2);
+            return SEARCH_PLAYER - HostCommand.FIND.heat;
         } else {
             String var3 = VoltaChat.canonical(var1);
             String var4 = var3 != null ? var3 : var1.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
             EntityType var5 = entityFor(var4);
-            return var5 == null && !VoltaChat.wantsEnemy(var1) ? findBlock(var0, var4, var1) : findMob(var0, var5, var1);
+            if (var5 == null && !VoltaChat.wantsEnemy(var1)) {
+                return findBlock(var0, var4, var1);
+            } else {
+                findMob(var0, var5, var1);
+                return 0;
+            }
         }
     }
 
@@ -1691,11 +1782,13 @@ public final class HostManager {
         }
     }
 
-    private static boolean findBlock(ServerPlayerEntity var0, String var1, String var2) {
+    private static int findBlock(ServerPlayerEntity var0, String var1, String var2) {
         if (var1.isBlank()) {
             say(var0, "how_find", 6);
-            return false;
+            return -1;
         } else {
+            // Even "there is none here" is an answer, and is paid for as one.
+            int var10 = searchHeat(var1);
             World var3 = var0.getWorld();
             BlockPos var4 = var0.getBlockPos();
             BlockPos var5 = null;
@@ -1713,10 +1806,10 @@ public final class HostManager {
 
             if (var5 == null) {
                 say(var0, "not_found", 2, var2);
-                return true;
+                return var10 - HostCommand.FIND.heat;
             } else {
                 report(var0, Vec3d.ofCenter(var5), 0, var3.getBlockState(var5).getBlock().getName());
-                return true;
+                return Math.max(var10, searchHeat(Registries.BLOCK.getId(var3.getBlockState(var5).getBlock()).getPath())) - HostCommand.FIND.heat;
             }
         }
     }
@@ -1924,15 +2017,13 @@ public final class HostManager {
             if (var1.nextPrank == 0L) {
                 var1.nextPrank = var2 + (long)PRANK_MIN + (long)var0.getRandom().nextInt(PRANK_SPREAD);
             } else if (var2 >= var1.nextPrank) {
+                // She does not care whether it is a fight, a bridge or thin air. Only the nearly dead are spared.
                 if (var1.quietUntil <= var2
                     && !var0.hasStatusEffect(WindyEffects.CYBERPSYCHOSIS)
-                    && var2 - var1.lastHurt >= 300L
-                    && !(var0.getHealth() < var0.getMaxHealth() / 2.0F)
+                    && !(var0.getHealth() < var0.getMaxHealth() / 4.0F)
                     && !var0.isTouchingWater()
                     && !var0.isInLava()
-                    && var0.currentScreenHandler == var0.playerScreenHandler
-                    && nearGround(var0)
-                    && var0.getAttacker() == null) {
+                    && var0.currentScreenHandler == var0.playerScreenHandler) {
                     HostPrank[] var4 = HostPrank.values();
 
                     HostPrank var5;
@@ -1986,7 +2077,7 @@ public final class HostManager {
                             PhaseFx.privateSound(var0, SoundEvents.ENTITY_ILLUSIONER_MIRROR_MOVE, 0.8F, 1.5F);
                             break;
                         case JUMP:
-                            var0.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOW_FALLING, 80, 0, false, false, false));
+                            // No soft landing: six blocks up, and down again the hard way.
                             var0.addVelocity(0.0, 1.0, 0.0);
                             var0.velocityModified = true;
                             PhaseFx.sound(var0, SoundEvents.ENTITY_FIREWORK_ROCKET_LAUNCH, SoundCategory.PLAYERS, 0.8F, 1.4F);
@@ -2007,6 +2098,43 @@ public final class HostManager {
 
                             var0.currentScreenHandler.sendContentUpdates();
                             PhaseFx.privateSound(var0, SoundEvents.ITEM_BUNDLE_DROP_CONTENTS, 0.9F, 1.2F);
+                            break;
+                        case SHOVE:
+                            double var15 = var0.getRandom().nextDouble() * Math.PI * 2.0;
+                            var0.addVelocity(Math.cos(var15) * 1.1, 0.4, Math.sin(var15) * 1.1);
+                            var0.velocityModified = true;
+                            PhaseFx.sound(var0, SoundEvents.ENTITY_PLAYER_ATTACK_KNOCKBACK, SoundCategory.PLAYERS, 1.0F, 0.8F);
+                            break;
+                        case DROP:
+                            ItemStack var16 = var0.getMainHandStack();
+                            if (var16.isEmpty()) {
+                                var1.nextPrank = var2 + 100L;
+                                return;
+                            }
+
+                            var0.dropItem(var16.copy(), false, true);
+                            var0.setStackInHand(net.minecraft.util.Hand.MAIN_HAND, ItemStack.EMPTY);
+                            var0.currentScreenHandler.sendContentUpdates();
+                            PhaseFx.privateSound(var0, SoundEvents.ENTITY_ITEM_PICKUP, 0.8F, 0.5F);
+                            break;
+                        case BLACKOUT:
+                            var0.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 100, 0, false, false, false));
+                            var0.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, 120, 0, false, false, false));
+                            PhaseFx.privateSound(var0, SoundEvents.BLOCK_BEACON_DEACTIVATE, 0.9F, 1.6F);
+                            break;
+                        case WHISTLE:
+                            // Everything hostile within earshot now knows exactly where the Host is.
+                            for (MobEntity var17 : var0.getWorld()
+                                .getEntitiesByClass(
+                                    MobEntity.class,
+                                    var0.getBoundingBox().expand(24.0),
+                                    var1x -> var1x instanceof Monster && var1x.isAlive() && PhaseFx.samePhase(var1x, var0) && var1x.canTarget(var0)
+                                )) {
+                                var17.setTarget(var0);
+                            }
+
+                            PhaseFx.sound(var0, SoundEvents.BLOCK_NOTE_BLOCK_FLUTE.value(), SoundCategory.PLAYERS, 3.0F, 2.0F);
+                            later(var0, 5, () -> PhaseFx.sound(var0, SoundEvents.BLOCK_NOTE_BLOCK_FLUTE.value(), SoundCategory.PLAYERS, 3.0F, 1.5F));
                             break;
                         case RUBBERBAND:
                             Vec3d var14 = var1.trail.peekFirst();
@@ -2062,6 +2190,7 @@ public final class HostManager {
         final List<HostManager.Later> later = new ArrayList<>();
         final ArrayDeque<Vec3d> trail = new ArrayDeque<>();
         long lastHurt;
+        float healthBefore;
         long lastCommand;
         long nextPrank;
         HostPrank lastPrank;

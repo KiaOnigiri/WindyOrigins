@@ -616,7 +616,8 @@ public final class VoltaChat {
             "стен", "стін", "заслон", "укрыти", "wall", "cover", "mauer", "mur$", "muro", "parede", "scian", "壁", "墙"
         });
         FLAGS.put(FLAG_PULL, new String[]{
-            "притяни", "тяни", "тащи", "ко мне", "сюда", "pull", "yank", "to me", "here", "zieh", "tire$", "jala$", "puxa", "przyciagnij", "引き寄せ", "拉"
+            "притяни", "тяни", "тащи", "ко мне", "сюда", "притягни", "тягни", "до мене", "сюди", "pull", "yank", "to me", "here", "zieh", "tire$", "attire", "jala$", "atrae",
+            "puxa", "puxe", "przyciagnij", "引き寄せ", "拉"
         });
         FLAGS.put(FLAG_TALK, new String[]{
             "говори", "можешь говорить", "вернись", "talk$", "speak", "unmute", "rede$", "sprich", "parle", "habla", "fale$", "mow$", "話して", "说话"

@@ -11,7 +11,7 @@ An **Origins** add-on for Minecraft **1.20.1** (Fabric) with nine origins. It be
 | **Luminian** | A living light. Cannot hide, burns the undead, rises once from death at dawn. |
 | **Folded** | Born in a pocket of space. Hovers, and carries a hitscan rifle that pierces armour. |
 | **Sanguine** | A vampire. Blood is its hunger bar, and every kind of blood grants a different trait. |
-| **Revenant** | A soul that will not leave. Possesses creatures, sends wisps on errands, takes fifteen seconds of vengeance after death. |
+| **Revenant** | A soul that will not leave. Possesses creatures, sends wisps on errands, takes ten seconds of vengeance after death. |
 | **Host** | Has a chip in the temple and Volta in the chip: a companion who fights, scouts and works on request, overheats, plays pranks and can break. |
 | **Dreamwalker** | Puts creatures to sleep and walks into their dreams. |
 

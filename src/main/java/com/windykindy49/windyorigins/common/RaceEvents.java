@@ -89,8 +89,28 @@ public final class RaceEvents {
             LuminianManager.remove(var0.player);
             FoldedManager.forget(var0.player);
             HostManager.forget(var0.player);
+            RevenantManager.onLeave(var0.player);
             com.windykindy49.windyorigins.revenant.WispManager.forget(var0.player);
             DreamManager.onLeave(var0.player);
+        });
+        // While the worlds are still up: wake the dreamers, release the possessed, take back what was only lent.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(var0 -> {
+            DreamManager.stopping(var0);
+            RevenantManager.stopping(var0);
+            FrostManager.reset();
+            SanguineManager.reset();
+            LuminianManager.reset();
+        });
+        // In single player the game outlives the world: nothing remembered about one may reach the next.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(var0 -> {
+            DreamManager.reset();
+            RevenantManager.reset();
+            FrostManager.reset();
+            FoldedManager.reset();
+            HostManager.reset();
+            SanguineManager.reset();
+            LuminianManager.reset();
+            com.windykindy49.windyorigins.bounty.BountyManager.reset();
         });
     }
 }

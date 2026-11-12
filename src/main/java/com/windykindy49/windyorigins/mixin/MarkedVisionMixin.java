@@ -1,5 +1,6 @@
 package com.windykindy49.windyorigins.mixin;
 
+import com.windykindy49.windyorigins.bounty.BountyManager;
 import com.windykindy49.windyorigins.bounty.client.ClientBountyState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -25,7 +26,7 @@ public class MarkedVisionMixin {
             MinecraftClient var14 = MinecraftClient.getInstance();
             Entity var15 = var14.cameraEntity;
             if (var15 != null && var1 != var15 && var1 != var15.getVehicle()) {
-                if (var15.squaredDistanceTo(var1) > 25.0) {
+                if (var15.squaredDistanceTo(var1) > BountyManager.MARKED_VISION * BountyManager.MARKED_VISION) {
                     var13.cancel();
                 }
             }

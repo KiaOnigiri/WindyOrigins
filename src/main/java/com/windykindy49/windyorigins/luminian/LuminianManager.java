@@ -155,6 +155,15 @@ public final class LuminianManager {
         }
     }
 
+    /** Takes back every light that is still standing, so none is saved into the world. */
+    public static void reset() {
+        for (LuminianManager.Placed placed : new java.util.ArrayList<>(PLACED.values())) {
+            clear(placed);
+        }
+
+        PLACED.clear();
+    }
+
     public static void remove(PlayerEntity var0) {
         LuminianManager.Placed var1 = PLACED.remove(var0.getUuid());
         if (var1 != null) {

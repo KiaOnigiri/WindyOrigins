@@ -400,6 +400,19 @@ public final class SanguineManager {
         }
     }
 
+    /** The bats of a burst are invulnerable and would otherwise be saved into the world for good. */
+    public static void reset() {
+        for (BatEntity bat : CLOUD) {
+            bat.discard();
+        }
+
+        CLOUD.clear();
+        BITE_COOLDOWN.clear();
+        LAST_MEAL.clear();
+        SUN_TICKS.clear();
+        LAST_REST.clear();
+    }
+
     public static void batForm(ServerPlayerEntity var0) {
         if (!var0.hasStatusEffect(WindyEffects.BAT_FORM)) {
             if (food(var0) < 4) {

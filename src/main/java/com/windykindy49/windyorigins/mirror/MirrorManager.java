@@ -138,6 +138,16 @@ public final class MirrorManager {
         }
 
         Banished state = Banished.get(server);
+
+        // Nobody but the Mirrored and the banished belongs in the Mirror phase. Someone who gave up
+        // the origin while standing in it would otherwise be left there with no way back.
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            if (inMirror(player) && !Powers.has(player, "phase_shift") && !state.entries.containsKey(player.getUuid()) && !player.isSpectator()) {
+                setPlayerPhase(player, false);
+                player.sendMessage(Text.translatable("message.windyorigins.mirror.returned").formatted(Formatting.AQUA), true);
+            }
+        }
+
         if (state.entries.isEmpty()) {
             return;
         }

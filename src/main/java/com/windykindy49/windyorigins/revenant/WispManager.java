@@ -58,6 +58,8 @@ public final class WispManager {
     private static final int VEIN = 6;
     private static final int AID_TICKS = 400;
     private static final int HAUNT_TICKS = 300;
+    /** No more than two wisps may torment one player at a time. */
+    private static final int MAX_ON_PLAYER = 2;
     private static final int GATHER_TICKS = 300;
     private static final double GATHER_RADIUS = 16.0;
     private static final double LEASH = 56.0;
@@ -113,6 +115,21 @@ public final class WispManager {
             this.world = world;
             this.expires = expires;
         }
+    }
+
+    /** How many wisps, from every Revenant, are tormenting this creature right now. */
+    private static int haunting(UUID target) {
+        int n = 0;
+
+        for (Squad squad : SQUADS.values()) {
+            for (Wisp w : squad.wisps) {
+                if (w.state == State.HAUNT && target.equals(w.target)) {
+                    n++;
+                }
+            }
+        }
+
+        return n;
     }
 
     public static boolean has(ServerPlayerEntity player) {
@@ -185,6 +202,11 @@ public final class WispManager {
             boolean own = target instanceof TameableEntity pet && player.getUuid().equals(pet.getOwnerUuid());
             boolean hostile = !own
                 && (target instanceof Monster || target instanceof MobEntity mob && mob.getTarget() == player || player.isSneaking());
+            if (hostile && target instanceof PlayerEntity && haunting(target.getUuid()) >= MAX_ON_PLAYER) {
+                deny(player, Text.translatable("message.windyorigins.revenant.wisp.crowded"));
+                return;
+            }
+
             wisp.target = target.getUuid();
             wisp.state = hostile ? State.HAUNT : State.AID;
             wisp.timer = hostile ? HAUNT_TICKS : AID_TICKS;
@@ -632,6 +654,10 @@ public final class WispManager {
 
         Powers.setResource(player, "wisps", 0);
         RevenantNetworking.marks(player, new int[0]);
+    }
+
+    static void reset() {
+        SQUADS.clear();
     }
 
     public static void forget(ServerPlayerEntity player) {

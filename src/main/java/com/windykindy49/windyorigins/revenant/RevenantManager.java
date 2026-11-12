@@ -56,7 +56,7 @@ public final class RevenantManager {
     public static final int POSSESS_COOLDOWN = 1200;
     public static final int WISP_COST = 3;
     public static final int WISP_TICKS = 1200;
-    public static final int VENGEANCE_TICKS = 300;
+    public static final int VENGEANCE_TICKS = 200;
     private static final int ECHO_LIFE = 200;
     private static final double ECHO_SPAWN_RANGE = 24.0;
     private static final double POSSESS_RANGE = 6.0;
@@ -81,8 +81,13 @@ public final class RevenantManager {
         return false;
     }
 
+    /** Only a death that was a threat leaves an Echo: hostile creatures and players, never livestock. */
+    private static boolean leavesEcho(LivingEntity var0) {
+        return var0 instanceof net.minecraft.entity.player.PlayerEntity || var0 instanceof net.minecraft.entity.mob.Monster;
+    }
+
     public static void onDeath(LivingEntity var0) {
-        if (var0.getWorld() instanceof ServerWorld var1 && !isGhost(var0)) {
+        if (var0.getWorld() instanceof ServerWorld var1 && !isGhost(var0) && leavesEcho(var0)) {
             boolean var7 = PhaseFx.phase(var0);
             boolean var3 = false;
 
@@ -189,12 +194,53 @@ public final class RevenantManager {
                 }
 
                 WispManager.tick(var4);
+            } else if (WispManager.has(var4)) {
+                // No longer a Revenant (the origin was changed): the wisps leave, and drop what they carry.
+                WispManager.dismiss(var4);
             }
         }
 
         if (var2) {
             var1.markDirty();
         }
+    }
+
+    /**
+     * Logging out mid-possession lets go at once: the Revenant is saved in its own game mode rather
+     * than as a spectator, and a haunted player is told the weight has lifted.
+     */
+    public static void onLeave(ServerPlayerEntity var0) {
+        RevenantState var1 = RevenantState.get(var0.getServer());
+        RevenantState.Possession var2 = var1.possessions.get(var0.getUuid());
+        if (var2 != null) {
+            Entity var3 = var2.host == null ? null : findHost(var0.getServer(), var2.host);
+            endPossession(var0, var2, var1, null);
+            if (var3 != null && var3.getWorld() == var0.getWorld()) {
+                var0.setPosition(var3.getX(), var3.getY() + 0.1, var3.getZ());
+            }
+
+            if (var3 instanceof ServerPlayerEntity var4) {
+                RevenantNetworking.haunted(var4, false);
+            }
+        }
+
+        EJECTED.remove(var0.getUuid());
+    }
+
+    /** The server is stopping: nobody is left possessing anything, and nothing leaks into the next world. */
+    public static void stopping(MinecraftServer var0) {
+        for (ServerPlayerEntity var2 : var0.getPlayerManager().getPlayerList()) {
+            onLeave(var2);
+            WispManager.dismiss(var2);
+        }
+    }
+
+    public static void reset() {
+        ECHOES.clear();
+        POSSESS_COOLDOWNS.clear();
+        FINISHING.clear();
+        EJECTED.clear();
+        WispManager.reset();
     }
 
     public static void onJoin(ServerPlayerEntity var0) {
@@ -361,6 +407,13 @@ public final class RevenantManager {
             EJECTED.put(var0.getUuid(), 0);
             RevenantNetworking.eject(var0, var3.getYaw(), var3.getPitch());
             PhaseFx.particles(var0, ParticleTypes.SOUL, var3.getX(), var3.getBodyY(0.5), var3.getZ(), 24, 0.3, 0.5, 0.3, 0.12);
+        } else if (var0.networkHandler != null && !var0.isDisconnected()) {
+            // The host is gone (it died, despawned or logged out): the soul is left where the host
+            // last was. The client is told so, and whatever drop is under it does no harm.
+            var0.setVelocity(Vec3d.ZERO);
+            var0.networkHandler.requestTeleport(var0.getX(), var0.getY(), var0.getZ(), var0.getYaw(), var0.getPitch());
+            var0.fallDistance = 0.0F;
+            EJECTED.put(var0.getUuid(), 0);
         }
 
         if (var3 instanceof ServerPlayerEntity var5) {
@@ -459,14 +512,14 @@ public final class RevenantManager {
             var4.deathPos = var2.getPos();
             Entity var5 = var1.getAttacker();
             var4.killer = var5 == null ? null : var5.getUuid();
-            var4.ticksLeft = 300;
+            var4.ticksLeft = VENGEANCE_TICKS;
             var3.ghosts.put(var2.getUuid(), var4);
             var3.markDirty();
             var2.setHealth(var2.getMaxHealth());
             var2.extinguish();
             var2.clearStatusEffects();
-            var2.addStatusEffect(new StatusEffectInstance(WindyEffects.VENGEANCE, 320, 0, false, false, true));
-            var2.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 340, 0, false, false, false));
+            var2.addStatusEffect(new StatusEffectInstance(WindyEffects.VENGEANCE, VENGEANCE_TICKS + 20, 0, false, false, true));
+            var2.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, VENGEANCE_TICKS + 40, 0, false, false, false));
             Flight.grant(var2, Flight.GHOST, true);
             WispManager.dismiss(var2);
             if (var5 != null) {

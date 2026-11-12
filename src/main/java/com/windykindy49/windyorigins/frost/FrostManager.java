@@ -125,7 +125,64 @@ public final class FrostManager {
             var3 -= 3;
         }
 
-        Powers.setResource(var0, "chill", MathHelper.clamp(chill(var0) + var3, 0, 100));
+        int var8 = MathHelper.clamp(chill(var0) + var3, 0, 100);
+        if (var8 <= 0 && burnSnow(var0)) {
+            var8 = 1;
+        }
+
+        Powers.setResource(var0, "chill", var8);
+    }
+
+    /** How long each thing keeps the last of the cold in, in ticks. Five stacks of snow blocks last ten minutes. */
+    private static final net.minecraft.item.Item[] SNOW_ITEMS = new net.minecraft.item.Item[]{
+        net.minecraft.item.Items.SNOWBALL,
+        net.minecraft.item.Items.SNOW,
+        net.minecraft.item.Items.SNOW_BLOCK,
+        net.minecraft.item.Items.ICE,
+        net.minecraft.item.Items.PACKED_ICE,
+        net.minecraft.item.Items.POWDER_SNOW_BUCKET,
+        net.minecraft.item.Items.BLUE_ICE
+    };
+    private static final int[] SNOW_TICKS = new int[]{10, 19, 38, 38, 76, 76, 152};
+    private static final Map<UUID, Integer> SNOW_FUEL = new HashMap<>();
+
+    /**
+     * With no Chill left the Frostborn melts whatever snow and ice is being carried instead, cheapest
+     * first. Returns false once there is nothing left to melt.
+     */
+    private static boolean burnSnow(ServerPlayerEntity player) {
+        int fuel = SNOW_FUEL.getOrDefault(player.getUuid(), 0);
+        if (fuel <= 0 && !player.isCreative()) {
+            net.minecraft.entity.player.PlayerInventory inventory = player.getInventory();
+
+            search:
+            for (int kind = 0; kind < SNOW_ITEMS.length; kind++) {
+                for (int slot = 0; slot < inventory.size(); slot++) {
+                    net.minecraft.item.ItemStack stack = inventory.getStack(slot);
+                    if (stack.isOf(SNOW_ITEMS[kind])) {
+                        if (stack.isOf(net.minecraft.item.Items.POWDER_SNOW_BUCKET)) {
+                            inventory.setStack(slot, new net.minecraft.item.ItemStack(net.minecraft.item.Items.BUCKET));
+                        } else {
+                            stack.decrement(1);
+                        }
+
+                        fuel += SNOW_TICKS[kind];
+                        PhaseFx.particles(player, ParticleTypes.SNOWFLAKE, player.getX(), player.getBodyY(0.6), player.getZ(), 6, 0.3, 0.4, 0.3, 0.02);
+                        PhaseFx.privateSound(player, net.minecraft.sound.SoundEvents.BLOCK_SNOW_BREAK, 0.35F, 1.5F);
+                        break search;
+                    }
+                }
+            }
+        }
+
+        if (fuel <= 0 && !player.isCreative()) {
+            SNOW_FUEL.remove(player.getUuid());
+            return false;
+        }
+
+        // Checked once a second.
+        SNOW_FUEL.put(player.getUuid(), fuel - 20);
+        return true;
     }
 
     private static boolean nearHeat(World var0, BlockPos var1) {
@@ -261,17 +318,7 @@ public final class FrostManager {
             var0.setVelocity(Vec3d.ZERO);
             var0.velocityModified = true;
             var0.extinguish();
-            ServerWorld var2 = var0.getServerWorld();
-            Boolean var3 = SpawnPhaseOverride.push(PhaseFx.phase(var0));
-
-            try {
-                FrostManager.Coffin var4 = new FrostManager.Coffin(var2);
-                var4.setPosition(var0.getX(), var0.getY(), var0.getZ());
-                var2.spawnEntity(var4);
-                COFFINS.put(var0.getUuid(), var4);
-            } finally {
-                SpawnPhaseOverride.restore(var3);
-            }
+            raiseCoffin(var0);
 
             PhaseFx.sound(var0, WindySounds.FROST_COFFIN, SoundCategory.PLAYERS, 1.0F, 1.4F);
             PhaseFx.particles(
@@ -292,12 +339,37 @@ public final class FrostManager {
         }
     }
 
+    private static void raiseCoffin(ServerPlayerEntity var0) {
+        ServerWorld var2 = var0.getServerWorld();
+        Boolean var3 = SpawnPhaseOverride.push(PhaseFx.phase(var0));
+
+        try {
+            FrostManager.Coffin var4 = new FrostManager.Coffin(var2);
+            var4.setPosition(var0.getX(), var0.getY(), var0.getZ());
+            var2.spawnEntity(var4);
+            COFFINS.put(var0.getUuid(), var4);
+        } finally {
+            SpawnPhaseOverride.restore(var3);
+        }
+    }
+
     private static void tickCoffin(ServerPlayerEntity var0) {
         Entity var1 = COFFINS.get(var0.getUuid());
         boolean var2 = var0.hasStatusEffect(WindyEffects.ICE_COFFIN) && var0.isAlive();
+        if (var2 && (var1 == null || var1.isRemoved() || var1.getWorld() != var0.getWorld())) {
+            // Still frozen but the ice is gone: the player logged back in mid-coffin or changed worlds.
+            if (var1 != null) {
+                var1.discard();
+            }
+
+            raiseCoffin(var0);
+            var1 = COFFINS.get(var0.getUuid());
+        }
+
         if (var2) {
             if (var0.age % 10 == 0) {
-                var0.heal(1.5F);
+                // Ten pulses over the five seconds: five hearts in all.
+                var0.heal(1.0F);
             }
 
             if (var0.age % 4 == 0) {
@@ -328,6 +400,17 @@ public final class FrostManager {
                 }
             }
         }
+    }
+
+    /** The server is going away: nothing may be left in the world, and nothing may leak into the next one. */
+    public static void reset() {
+        for (Entity coffin : COFFINS.values()) {
+            coffin.discard();
+        }
+
+        COFFINS.clear();
+        SNOW_FUEL.clear();
+        RIDE_POS.clear();
     }
 
     public static void forget(ServerPlayerEntity var0) {

@@ -31,7 +31,8 @@ public final class BountyManager {
     public static final int COOLDOWN = 2400;
     public static final double MARK_RANGE = 100.0;
     public static final double LEASH_RANGE = 150.0;
-    public static final double MARKED_VISION = 5.0;
+    /** A marked player stops seeing creatures and players (not terrain) past this many blocks. */
+    public static final double MARKED_VISION = 12.0;
     private static final int LOST_GRACE = 200;
     public static final int PHASE_GRACE = 100;
     private static final int DETAIL_INTERVAL = 5;
@@ -153,6 +154,10 @@ public final class BountyManager {
 
     public static boolean isMarkedByAnyone(MinecraftServer var0, Entity var1) {
         return isTargeted(var0, var1.getUuid());
+    }
+
+    public static void reset() {
+        JUST_PAID.clear();
     }
 
     public static void notePaid(ServerPlayerEntity var0, BountyRewards.Tier var1) {
