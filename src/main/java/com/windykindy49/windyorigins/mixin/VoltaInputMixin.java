@@ -16,7 +16,8 @@ public abstract class VoltaInputMixin {
         at = {@At("TAIL")}
     )
     private void windyorigins$invert(boolean var1, float var2, CallbackInfo var3) {
-        if (HostClient.inverted()) {
+        com.windykindy49.windyorigins.client.PilotClient.steer((Input)(Object)this);
+        if (HostClient.inverted() && !com.windykindy49.windyorigins.client.PilotClient.active()) {
             Input var4 = (Input)(Object)this;
             var4.movementForward = -var4.movementForward;
             var4.movementSideways = -var4.movementSideways;
