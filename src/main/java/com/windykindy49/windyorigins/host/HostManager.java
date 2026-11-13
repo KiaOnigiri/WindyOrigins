@@ -123,7 +123,7 @@ public final class HostManager {
         return Powers.has(var0, "volta");
     }
 
-    private static HostManager.State state(PlayerEntity var0) {
+    static HostManager.State state(PlayerEntity var0) {
         return STATES.computeIfAbsent(var0.getUuid(), var0x -> new HostManager.State());
     }
 
@@ -132,6 +132,7 @@ public final class HostManager {
      * or a quick relog would reset every command and the quiet-mode wait.
      */
     public static void forget(ServerPlayerEntity var0) {
+        Pilot.forget(var0);
         HostManager.State var1 = STATES.get(var0.getUuid());
         if (var1 != null) {
             var1.work.clear();
@@ -160,7 +161,7 @@ public final class HostManager {
     }
 
     /** Another player, while the Host has players switched off: nothing of Volta's may touch them. */
-    private static boolean spared(ServerPlayerEntity host, Entity other) {
+    static boolean spared(ServerPlayerEntity host, Entity other) {
         return other instanceof PlayerEntity && other != host && sparesPlayers(host);
     }
 
@@ -169,12 +170,12 @@ public final class HostManager {
      * overload, a spreading virus, lifted gravity, a turned mob. Never a spectator, somebody building in
      * creative, or one of the Host's own team; those can still be aimed at by hand.
      */
-    private static boolean fairGame(ServerPlayerEntity host, Entity other) {
+    static boolean fairGame(ServerPlayerEntity host, Entity other) {
         return other instanceof PlayerEntity player && other != host && !sparesPlayers(host) && !player.isSpectator() && !player.isCreative() && !host.isTeammate(other);
     }
 
     /** What her area abilities take for an enemy: monsters, whatever is after the Host, and players when they are switched on. */
-    private static boolean enemy(ServerPlayerEntity host, LivingEntity other) {
+    static boolean enemy(ServerPlayerEntity host, LivingEntity other) {
         return other instanceof Monster || other instanceof MobEntity mob && mob.getTarget() == host || fairGame(host, other);
     }
 
@@ -188,12 +189,18 @@ public final class HostManager {
      * them. The answer comes back in a tick or two; a client that does not answer in five seconds counts as
      * having answered "nothing", so the request still ends.
      */
-    private static void askNames(
+    static void askNames(
         ServerPlayerEntity host, boolean block, String said, java.util.function.BiConsumer<List<net.minecraft.util.Identifier>, List<net.minecraft.util.Identifier>> then
+    ) {
+        askNames(host, block ? HostNetworking.NAME_BLOCK : HostNetworking.NAME_ITEM, said, then);
+    }
+
+    static void askNames(
+        ServerPlayerEntity host, int kind, String said, java.util.function.BiConsumer<List<net.minecraft.util.Identifier>, List<net.minecraft.util.Identifier>> then
     ) {
         int id = ++askCounter;
         ASKS.put(host.getUuid(), new HostManager.Ask(id, (long)host.getServer().getTicks() + (long)ASK_TICKS, then));
-        HostNetworking.ask(host, id, block, said);
+        HostNetworking.ask(host, id, kind, said);
     }
 
     public static void answer(ServerPlayerEntity host, int id, List<net.minecraft.util.Identifier> exact, List<net.minecraft.util.Identifier> partial) {
@@ -242,6 +249,7 @@ public final class HostManager {
 
     public static void reset() {
         LIDS.clear();
+        Pilot.reset();
         ASKS.clear();
         STATES.clear();
         TURNED.clear();
@@ -282,6 +290,7 @@ public final class HostManager {
         var0.addStatusEffect(new StatusEffectInstance(WindyEffects.CYBERPSYCHOSIS, 300, 0, false, false, true));
         var0.addStatusEffect(new StatusEffectInstance(StatusEffects.NAUSEA, 300, 0, false, false, false));
         say(var0, "psychosis", 7);
+        Pilot.release(var0, null);
         PhaseFx.sound(var0, SoundEvents.ENTITY_GUARDIAN_ATTACK, SoundCategory.PLAYERS, 1.0F, 1.6F);
         state(var0).work.clear();
         state(var0).later.clear();
@@ -380,7 +389,7 @@ public final class HostManager {
         return true;
     }
 
-    private static void deadChip(ServerPlayerEntity var0) {
+    static void deadChip(ServerPlayerEntity var0) {
         PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 0.5F);
         var0.sendMessage(Text.translatable("message.windyorigins.volta.chip_broken_hint", REPAIR_KIT.getName()).formatted(Formatting.RED), true);
     }
@@ -389,6 +398,7 @@ public final class HostManager {
         tickAsks(var0);
 
         for (ServerPlayerEntity var2 : var0.getPlayerManager().getPlayerList()) {
+            Pilot.tick(var2);
             if (isHost(var2) && var2.isAlive()) {
                 if (var2.age % 200 == 20) {
                     // Every Host knows how to mend the chip: the recipe is in the book without being found first.
@@ -421,6 +431,7 @@ public final class HostManager {
                     && var4 - var3.lastHurt > (long)COOL_DELAY
                     && var4 - var3.lastCommand > (long)COOL_DELAY
                     && var4 >= var3.warpEnds
+                    && !Pilot.active(var2)
                     && !var2.isTouchingWaterOrRain()
                     && heat(var2) > 0) {
                     // The chip sheds heat slowly, and only once it has been left alone for a while.
@@ -532,6 +543,18 @@ public final class HostManager {
     }
 
     public static void command(ServerPlayerEntity var0, HostCommand var1, VoltaChat.Request var2, boolean var3) {
+        if (var1 == HostCommand.PILOT) {
+            if (isHost(var0) && var0.isAlive() && !var0.isSpectator()) {
+                if (isBroken(var0)) {
+                    deadChip(var0);
+                } else {
+                    Pilot.toggle(var0);
+                }
+            }
+
+            return;
+        }
+
         if (isHost(var0) && var0.isAlive() && !var0.isSpectator()) {
             HostManager.State var4 = state(var0);
             long var5 = var0.getWorld().getTime();
@@ -582,6 +605,7 @@ public final class HostManager {
                 }
                 break;
             case STOP:
+                Pilot.release(var0, null);
                 ASKS.remove(var0.getUuid());
                 var3.work.clear();
                 var3.later.clear();
@@ -1583,7 +1607,7 @@ public final class HostManager {
         HostNetworking.cast(var0, var1, 20);
     }
 
-    private static LivingEntity lookTarget(ServerPlayerEntity var0, double var1) {
+    static LivingEntity lookTarget(ServerPlayerEntity var0, double var1) {
         Vec3d var3 = var0.getEyePos();
         Vec3d var4 = var0.getRotationVec(1.0F);
         Vec3d var5 = var3.add(var4.multiply(var1));
@@ -1921,7 +1945,7 @@ public final class HostManager {
     }
 
     /** 0 when the stack is not a tool for this block; otherwise the bigger the better. A tool on its last use is left alone. */
-    private static float worksOn(ItemStack stack, BlockState state) {
+    static float worksOn(ItemStack stack, BlockState state) {
         if (stack.isEmpty() || !(stack.getItem() instanceof net.minecraft.item.MiningToolItem) && !(stack.getItem() instanceof net.minecraft.item.ShearsItem)) {
             return 0.0F;
         }
@@ -2579,40 +2603,7 @@ public final class HostManager {
         int limit = MathHelper.clamp(number <= 0 ? 16 : number, 1, 64);
         boolean down = request.has(VoltaChat.FLAG_DOWN);
         askNames(host, true, thing, (exact, partial) -> {
-            List<java.util.function.Predicate<BlockState>> wanted = new ArrayList<>();
-            if (!exact.isEmpty()) {
-                // The words are the whole name of a block: that block, and what is the same thing to the one asking.
-                // "Gold ore" is gold ore in stone, in deepslate and in netherrack; "dirt" has grass on top.
-                java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(exact);
-                java.util.Set<String> ores = oresOf(exact);
-                java.util.Set<Block> kin = kinOf(exact);
-                boolean baked = ids.contains(Registries.BLOCK.getId(Blocks.TERRACOTTA));
-                wanted.add(
-                    state -> ids.contains(Registries.BLOCK.getId(state.getBlock()))
-                            || kin.contains(state.getBlock())
-                            || baked && state.isIn(net.minecraft.registry.tag.BlockTags.TERRACOTTA)
-                            || ores.stream().anyMatch(stuff -> isOre(state, stuff))
-                );
-            } else {
-                if (alias != null) {
-                    // An everyday word for a material ("gold", "алмазы"): its ore in any rock and the blocks made of it.
-                    wanted.add(state -> isStuff(state, alias));
-                }
-
-                if (!partial.isEmpty()) {
-                    // The same for a material this mod has never heard of: if the words fit the ore of one thing only
-                    // ("олово" of some other mod), it is that thing's ore and its blocks, not its doors and stairs.
-                    java.util.Set<String> ores = oresOf(partial);
-                    if (ores.size() == 1) {
-                        String stuff = ores.iterator().next();
-                        wanted.add(state -> isOre(state, stuff) || isStorage(state, stuff));
-                    }
-
-                    // Strictly last: "stone" must not take the stone bricks of somebody's wall while there is stone.
-                    java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(partial);
-                    wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
-                }
-            }
+            List<java.util.function.Predicate<BlockState>> wanted = wantedBlocks(alias, exact, partial);
 
             if (wanted.isEmpty()) {
                 int extra = command == HostCommand.DIG ? dig(host, down, number) : harvest(host);
@@ -2654,13 +2645,57 @@ public final class HostManager {
         return 0;
     }
 
+    /**
+     * What a spoken name means as blocks to dig, most likely meaning first. The words come as the Host's own game
+     * understood them: {@code exact} when they are the whole name of a block, {@code partial} when part of one.
+     */
+    static List<java.util.function.Predicate<BlockState>> wantedBlocks(String alias, List<net.minecraft.util.Identifier> exact, List<net.minecraft.util.Identifier> partial) {
+        List<java.util.function.Predicate<BlockState>> wanted = new ArrayList<>();
+        if (!exact.isEmpty()) {
+            // The words are the whole name of a block: that block, and what is the same thing to the one asking.
+            // "Gold ore" is gold ore in stone, in deepslate and in netherrack; "dirt" has grass on top.
+            java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(exact);
+            java.util.Set<String> ores = oresOf(exact);
+            java.util.Set<Block> kin = kinOf(exact);
+            boolean baked = ids.contains(Registries.BLOCK.getId(Blocks.TERRACOTTA));
+            wanted.add(
+                state -> ids.contains(Registries.BLOCK.getId(state.getBlock()))
+                        || kin.contains(state.getBlock())
+                        || baked && state.isIn(net.minecraft.registry.tag.BlockTags.TERRACOTTA)
+                        || ores.stream().anyMatch(stuff -> isOre(state, stuff))
+            );
+        } else {
+            if (alias != null) {
+                // An everyday word for a material ("gold", "алмазы"): its ore in any rock and the blocks made of it.
+                wanted.add(state -> isStuff(state, alias));
+            }
+
+            if (!partial.isEmpty()) {
+                // The same for a material this mod has never heard of: if the words fit the ore of one thing only
+                // ("олово" of some other mod), it is that thing's ore and its blocks, not its doors and stairs.
+                java.util.Set<String> ores = oresOf(partial);
+                if (ores.size() == 1) {
+                    String stuff = ores.iterator().next();
+                    wanted.add(state -> isOre(state, stuff) || isStorage(state, stuff));
+                }
+
+                // Strictly last: "stone" must not take the stone bricks of somebody's wall while there is stone.
+                java.util.Set<net.minecraft.util.Identifier> ids = new HashSet<>(partial);
+                wanted.add(state -> ids.contains(Registries.BLOCK.getId(state.getBlock())));
+            }
+        }
+
+        return wanted;
+    }
+
     /** What a word of the alias table means as a thing to dig out. */
-    private static boolean isStuff(BlockState state, String alias) {
+    static boolean isStuff(BlockState state, String alias) {
         String path = Registries.BLOCK.getId(state.getBlock()).getPath();
         return switch (alias) {
             case "diamond", "iron", "gold", "coal", "copper", "emerald", "redstone", "lapis" -> isOre(state, alias) || isStorage(state, alias);
             case "ancient_debris" -> path.equals("ancient_debris") || path.equals("netherite_block");
             case "log" -> path.endsWith("_log") || path.endsWith("_stem");
+            case "chest" -> path.equals("chest") || path.equals("trapped_chest") || path.equals("barrel");
             default -> path.equals(alias);
         };
     }
@@ -2902,6 +2937,22 @@ public final class HostManager {
         HostManager.State var2 = state(var0);
         long var3 = var0.getWorld().getTime();
         String var5 = VoltaChat.addressed(var1);
+        if (!isBroken(var0) && (var5 != null || var3 < var2.listenUntil)) {
+            // First: is this for the body? "Иди ищи алмазы", "зафарми зомби", and anything at all while she has it.
+            List<PilotSpeech.Order> orders = PilotSpeech.parseAll(var5 == null ? var1 : var5, var0, var0.getServer().getPlayerManager().getPlayerList(), Pilot.active(var0));
+            if (orders != null && var5 == null && orders.size() == 1 && orders.get(0).vague()) {
+                // Not said to her by name and nothing but "go": that was for somebody else in the chat.
+                orders = null;
+            }
+
+            if (orders != null) {
+                var2.listenUntil = var3 + (long)LISTEN_TICKS;
+                var0.sendMessage(Text.literal("› " + var1).formatted(Formatting.DARK_AQUA), false);
+                Pilot.orders(var0, orders);
+                return true;
+            }
+        }
+
         String var9 = var5 == null ? VoltaChat.swapLayout(var1) : null;
         if (var9 != null && VoltaChat.addressed(var9) != null) {
             // Typed on the wrong keyboard layout: "djknf yfqlb fkvfps".
@@ -2954,6 +3005,11 @@ public final class HostManager {
     }
 
     private static void tickPranks(ServerPlayerEntity var0, HostManager.State var1, long var2) {
+        if (Pilot.active(var0)) {
+            // With the body in her hands she has better things to do than trip it up.
+            return;
+        }
+
         if (Powers.has(var0, "volta_pranks") && !isBroken(var0)) {
             if (var1.nextPrank == 0L) {
                 var1.nextPrank = var2 + (long)PRANK_MIN + (long)var0.getRandom().nextInt(PRANK_SPREAD);

@@ -22,6 +22,7 @@ public class WindyOriginsClient implements ClientModInitializer {
         RevenantClient.init();
         RaceHud.init();
         HostClient.init();
+        com.windykindy49.windyorigins.client.PilotClient.init();
         LuminianLight.init();
         DreamSky.init();
         DreamVision.init();
