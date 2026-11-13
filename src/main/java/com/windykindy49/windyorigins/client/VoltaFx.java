@@ -84,6 +84,13 @@ public final class VoltaFx {
     private static float impactX;
     private static float impactY;
     private static int impactColor;
+    /** Volta at the controls of the body: ticks since she let go, counting down, while her mass draws back. */
+    private static int pilotOut;
+    private static int pilotAge;
+    private static boolean pilotHot;
+    private static boolean pilotStrings;
+    /** Ticks left of the cables hauled taut after a blow or a block. */
+    private static int pilotPull;
     // The pixel canvas.
     private static int cell = 3;
     private static int gw;
@@ -390,9 +397,101 @@ public final class VoltaFx {
         WORDS.add(new Word(text, x, y, color, (float)(Math.random() * 30.0 - 15.0), life));
     }
 
+    /** She takes the body: a white frame, the lettering, and her mass comes down over the top of the view. */
+    public static void pilotOn(boolean strings) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        pilotOut = 0;
+        pilotAge = 0;
+        pilotHot = false;
+        pilotStrings = strings;
+        impactTicks = 3;
+        impactX = (float)screenW * 0.5F;
+        impactY = (float)screenH * 0.42F;
+        impactColor = CYAN;
+        kick = 1.0F;
+        int tone = strings ? MAGENTA : CYAN;
+        word(strings ? "GOTCHA!" : "OVERRIDE!", (float)screenW * 0.5F, (float)screenH * 0.36F, tone, 16);
+        splash((float)screenW * 0.08F, (float)screenH * 0.1F, 14, tone, 1.2F);
+        splash((float)screenW * 0.92F, (float)screenH * 0.1F, 14, tone, 1.2F);
+        play(client, SoundEvents.BLOCK_RESPAWN_ANCHOR_CHARGE, 0.5F, 1.7F);
+    }
+
+    /** She lets go: the cables snap and what hung over the view is gone in a few ticks. */
+    public static void pilotOff() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        pilotOut = 7;
+        float hands = (float)screenH * 0.95F;
+        splash((float)screenW * 0.17F, hands, 12, CYAN, 1.0F);
+        splash((float)screenW * 0.83F, hands, 12, CYAN, 1.0F);
+        word(pilotStrings ? "SNAP!" : (pilotHot ? "TOO HOT!" : "ALL YOURS"), (float)screenW * 0.5F, (float)screenH * 0.36F, pilotHot || pilotStrings ? MAGENTA : CYAN, 14);
+        play(client, SoundEvents.BLOCK_CHAIN_BREAK, 0.7F, 0.7F);
+    }
+
+    /** A blow landed with the Host's hand: a burst and a word where it fell, and the cables jump. */
+    public static void pilotHit(Vec3d at, boolean hard) {
+        float[] spot = captured ? project(at) : new float[]{0.0F, 0.0F, 0.0F};
+        pilotPull = 3;
+        if (spot[2] == 0.0F) {
+            return;
+        }
+
+        int tone = pilotStrings ? MAGENTA : CYAN;
+        splash(spot[0], spot[1], hard ? 16 : 8, hard ? 0xFFFFFF : tone, hard ? 1.3F : 0.9F);
+        if (hard || Math.random() < 0.5) {
+            word(hard ? "CRIT!" : HIT_WORDS[(int)(Math.random() * (double)HIT_WORDS.length)], spot[0], spot[1] - 22.0F * scale(), hard ? 0xFFFFFF : tone, 8);
+        }
+
+        if (hard) {
+            kick = 0.5F;
+        }
+    }
+
+    /** A block came out under her hands. */
+    public static void pilotBroke(Vec3d at) {
+        float[] spot = captured ? project(at) : new float[]{0.0F, 0.0F, 0.0F};
+        pilotPull = 2;
+        if (spot[2] == 0.0F) {
+            return;
+        }
+
+        splash(spot[0], spot[1], 9, pilotStrings ? MAGENTA : CYAN, 0.8F);
+        if (Math.random() < 0.3) {
+            word(WORK_WORDS[(int)(Math.random() * 2.0) * 3], spot[0], spot[1] - 18.0F * scale(), CYAN, 7);
+        }
+    }
+
+    public static void pilotAte() {
+        word("NOM", (float)screenW * 0.5F, (float)screenH * 0.72F, CYAN, 8);
+    }
+
     public static void tick(MinecraftClient client) {
         prevKick = kick;
         kick *= 0.6F;
+        if (pilotOut > 0) {
+            pilotOut--;
+        }
+
+        if (pilotPull > 0) {
+            pilotPull--;
+        }
+
+        if (PilotClient.active()) {
+            pilotAge++;
+            boolean hot = !pilotStrings && client.player != null && com.windykindy49.windyorigins.host.HostManager.heat(client.player) >= 80;
+            if (hot && !pilotHot) {
+                // The chip is running hot: a jolt, and from here on the whole rig shows it.
+                word("KZZT!", (float)screenW * 0.5F, (float)screenH * 0.3F, MAGENTA, 10);
+                splash((float)screenW * 0.5F, (float)screenH * 0.08F, 16, MAGENTA, 1.3F);
+                kick = 0.7F;
+            }
+
+            pilotHot = hot;
+            if (pilotAge % 9 == 0) {
+                // A drip of her off the mass overhead.
+                float x = (float)(Math.random() * (double)screenW);
+                FLECKS.add(new Fleck(x, (float)screenH * 0.05F, 0.0F, 5.0F * scale(), Math.random() < 0.4 ? 2 : 1, 7, hot && Math.random() < 0.5 ? MAGENTA : CYAN));
+            }
+        }
         glitch *= 0.72F;
         if (impactTicks > 0) {
             impactTicks--;
@@ -1100,7 +1199,8 @@ public final class VoltaFx {
         MinecraftClient client = MinecraftClient.getInstance();
         screenW = width;
         screenH = height;
-        if (client.world == null || ACTIVE.isEmpty() && FLECKS.isEmpty() && WORDS.isEmpty() && impactTicks <= 0 && ghostRunCount == 0 && lastRunCount == 0) {
+        boolean piloted = PilotClient.active() || pilotOut > 0;
+        if (client.world == null || ACTIVE.isEmpty() && FLECKS.isEmpty() && WORDS.isEmpty() && impactTicks <= 0 && ghostRunCount == 0 && lastRunCount == 0 && !piloted) {
             return;
         }
 
@@ -1157,6 +1257,10 @@ public final class VoltaFx {
                 default -> {
                 }
             }
+        }
+
+        if (piloted && !client.options.hudHidden) {
+            pilot(client, now, beat, width, height);
         }
 
         for (Fleck fleck : FLECKS) {
@@ -1971,6 +2075,157 @@ public final class VoltaFx {
             float x = i % 2 == 0 ? (float)(cell * (1 + i)) : (float)width - (float)(cell * (2 + i));
             float y = (float)height - (float)Math.floorMod(beat * 13 + i * 47, Math.max(1, height));
             box(x, y, x + (float)(cell * 2) - 1.0F, y + (float)(cell * 2) - 1.0F, SOLID | (i % 3 == 0 ? 0xFFFFFF : fx.color));
+        }
+    }
+
+    /** Four corners that snap in and out on the beat around something she has her hands on. */
+    private static void bracket(float x, float y, float r, int beat, int rgb) {
+        float s = r * (beat % 2 == 0 ? 1.0F : 1.2F);
+        float len = s * 0.5F;
+        float thick = Math.max((float)cell, r * 0.1F);
+
+        for (int sx = -1; sx <= 1; sx += 2) {
+            for (int sy = -1; sy <= 1; sy += 2) {
+                float cx = x + (float)sx * s;
+                float cy = y + (float)sy * s;
+                box(Math.min(cx, cx - (float)sx * len), cy - thick * 0.5F, Math.max(cx, cx - (float)sx * len), cy + thick * 0.5F, SOLID | rgb);
+                box(cx - thick * 0.5F, Math.min(cy, cy - (float)sy * len), cx + thick * 0.5F, Math.max(cy, cy - (float)sy * len), SOLID | rgb);
+            }
+        }
+    }
+
+    /**
+     * Volta at the controls of the body. Her mass hangs over the top of the view with a heavy knot in each
+     * corner, and from each knot a cable sags down to a hand and pulls taut when the hand works. Whatever the
+     * hands are on sits in a snapping bracket; the way she means to walk is strung out ahead in beads. When the
+     * chip runs hot the whole rig goes magenta and shakes.
+     */
+    private static void pilot(MinecraftClient client, int now, int beat, int width, int height) {
+        float show = PilotClient.active() ? Math.min(1.0F, (float)(pilotAge + 1) / 5.0F) : (float)pilotOut / 7.0F;
+        if (show <= 0.02F) {
+            return;
+        }
+
+        boolean live = PilotClient.active();
+        boolean hot = pilotHot;
+        int color = pilotStrings ? (beat % 4 == 0 ? 0xFFFFFF : MAGENTA) : (hot && beat % 2 == 0 ? MAGENTA : CYAN);
+        float sc = scale();
+        float unit = (float)height * 0.07F;
+        float shake = hot ? (float)hash(31L, beat, 4) * unit * 0.25F : 0.0F;
+        int lumps = 13;
+        float px = 0.0F;
+        float py = 0.0F;
+        float pr = 0.0F;
+
+        for (int i = 0; i < lumps; i++) {
+            float r = unit * (0.7F + 0.5F * (float)Math.abs(hash(77L, i, beat / 2)));
+            float x = (float)width * ((float)i + 0.5F) / (float)lumps + shake;
+            float y = -r * (1.0F - 0.85F * show) + (float)hash(77L, i, beat) * r * 0.35F;
+            if (i > 0) {
+                limb(px, py, pr, x, y, r, color);
+            } else {
+                blob(x, y, r, color);
+            }
+
+            px = x;
+            py = y;
+            pr = r;
+        }
+
+        Vec3d mark = live ? PilotClient.mark(client) : null;
+        boolean busy = mark != null;
+
+        for (int side = -1; side <= 1; side += 2) {
+            // The knot in the corner, and an eye of it that looks where the work is.
+            float ox = side < 0 ? unit * 0.9F : (float)width - unit * 0.9F;
+            float oy = unit * 0.9F * show + shake;
+            blob(ox, oy, unit * 1.35F * show, color);
+            blob(ox + (float)side * -unit * 0.25F, oy + unit * 0.2F, unit * 0.42F * show, 0xFFFFFF);
+            blob(ox + (float)side * -unit * (busy ? 0.42F : 0.3F), oy + unit * (busy ? 0.34F : 0.24F), unit * 0.2F * show, INK);
+            // The cable: slack while the hand is idle, hauled tight on the beat while it works.
+            float tx = (float)width * (0.5F + (float)side * 0.33F);
+            float ty = MathHelper.lerp(show, oy, (float)height * 0.97F);
+            float pull = pilotPull > 0 ? -0.15F : (busy && (beat + (side > 0 ? 0 : 1)) % 2 == 0 ? 0.25F : 1.0F);
+            float cx = (ox + tx) * 0.5F + (float)side * unit * (2.2F * pull + (float)hash(13L + (long)side, beat, 2) * 0.5F);
+            float cy = (oy + ty) * 0.5F + unit * 2.4F * pull;
+            int joints = 12;
+            float lx = ox;
+            float ly = oy;
+
+            for (int i = 1; i <= joints; i++) {
+                float t = (float)i / (float)joints;
+                float u = 1.0F - t;
+                float x = u * u * ox + 2.0F * u * t * cx + t * t * tx;
+                float y = u * u * oy + 2.0F * u * t * cy + t * t * ty;
+                float r = unit * MathHelper.lerp(t, 0.36F, 0.15F);
+                limb(lx, ly, r, x, y, r, color);
+                if (Math.floorMod(i - beat, 4) == 0) {
+                    // What she sends down the line.
+                    blob(x, y, r * 1.7F, (i + beat) % 8 == 0 ? MAGENTA : 0xFFFFFF);
+                }
+
+                lx = x;
+                ly = y;
+            }
+
+            spike(tx, ty, unit * (pilotPull > 0 ? 1.1F : (busy && beat % 2 == 0 ? 0.75F : 0.55F)), unit * 0.24F, pilotPull > 0 ? 8 : 4, (float)(beat % 2) * 0.785F, SOLID | 0xFFFFFF);
+            blob(tx, ty, unit * 0.3F, color);
+        }
+
+        if (!live) {
+            return;
+        }
+
+        if (PilotClient.running()) {
+            // At a run: the air goes past in lines down both sides of the view.
+            for (int i = 0; i < 14; i++) {
+                boolean left = i % 2 == 0;
+                float y = (float)height * (0.18F + 0.66F * (float)Math.abs(hash(41L, i, beat)));
+                float len = (float)width * (0.05F + 0.09F * (float)Math.abs(hash(43L, i, beat)));
+                float x = left ? (float)width * 0.02F : (float)width * 0.98F;
+                stroke(x, y, left ? x + len : x - len, y + ((float)height * 0.5F - y) * 0.08F, 0.8F * sc, BARE | (i % 5 == 0 ? 0xFFFFFF : color));
+            }
+        }
+
+        if (mark != null) {
+            float[] at = project(mark);
+            if (at[2] != 0.0F) {
+                double distance = Math.sqrt(mark.squaredDistanceTo(cameraPos));
+                float r = MathHelper.clamp((float)(230.0 / Math.max(1.5, distance)), 9.0F, 70.0F) * sc;
+                boolean foe = PilotClient.fighting();
+                bracket(at[0], at[1], r, beat, foe ? MAGENTA : color);
+                if (foe) {
+                    spike(at[0], at[1], r * 0.5F, r * 0.2F, 4, (float)(beat % 2) * 0.785F, SOLID | 0xFFFFFF);
+                } else {
+                    // A thread of her from each hand to the block.
+                    stroke((float)width * 0.17F, (float)height * 0.97F, at[0] - r, at[1] + r, 1.2F * sc, BARE | color);
+                    stroke((float)width * 0.83F, (float)height * 0.97F, at[0] + r, at[1] + r, 1.2F * sc, BARE | color);
+                }
+            }
+        }
+
+        // The way ahead, a bead a step.
+        float[] last = null;
+        int n = 0;
+
+        for (Vec3d step : PilotClient.path()) {
+            if (n++ >= 6) {
+                break;
+            }
+
+            float[] at = project(step.add(0.0, 0.12, 0.0));
+            if (at[2] == 0.0F) {
+                last = null;
+                continue;
+            }
+
+            if (last != null) {
+                stroke(last[0], last[1], at[0], at[1], 0.9F * sc, BARE | color);
+            }
+
+            float size = (n == 1 ? 4.6F : 3.2F) * sc * (Math.floorMod(beat - n, 3) == 0 ? 1.5F : 1.0F);
+            spike(at[0], at[1], size, size * 0.45F, 4, 0.0F, SOLID | (n == 1 ? 0xFFFFFF : color));
+            last = at;
         }
     }
 
