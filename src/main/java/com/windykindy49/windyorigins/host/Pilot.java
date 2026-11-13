@@ -53,6 +53,7 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.RaycastContext;
@@ -104,6 +105,16 @@ public final class Pilot {
     private static final int SWEEP = 64;
     /** The creature named is to be got onto, not struck: a boat. */
     private static final int MOUNT = 128;
+    /** A straight, level stretch ahead and a long way to go: sprinting with a jump in it, which is faster. */
+    private static final int HOP = 256;
+    /** A block is being set from above onto the side of the one she stands on: back to the gap, crouched at the edge, as a player bridges. */
+    private static final int BACK = 512;
+    /** A gap to be jumped: the jump comes at the very edge. */
+    private static final int LEAP = 1024;
+    /** Wings: off the ground, and the jump key again on the way down to open them. */
+    private static final int FLY = 2048;
+    /** The other is a player: she circles as she fights, and lets the sprint go for a moment after each blow so that the next one throws them back too. */
+    private static final int DUEL = 4096;
     /**
      * Two points of heat in this many ticks while she works, one while she only holds the body and waits: with
      * what taking it costs, a cold chip is at a hundred in forty-five seconds of work.
@@ -186,6 +197,44 @@ public final class Pilot {
         int label;
         int sentHash;
         long sentAt;
+        /** A duel: the pearl last thrown, the block a crystal goes on, where the other was a tick ago and how fast it moves. */
+        int pearlAt = -200;
+        int pearlAim;
+        BlockPos crystalBase;
+        int crystalTicks;
+        int crystalAt = -200;
+        Vec3d foeWas;
+        Vec3d foeSpeed = Vec3d.ZERO;
+        int foeId = -1;
+        /** A flight on elytra: 1 taking off, 2 on the wing, 3 coming down; what was worn under the wings; the last rocket. */
+        int fly;
+        int flyTicks;
+        double sailSpeed;
+        Vec3d sailWas;
+        int flyAgain;
+        /** How steeply she has to go up from where she stands, in degrees; nothing when there is no room to. */
+        double flyUp;
+        int flyRocket;
+        Vec3d flyLast;
+        boolean flySwapped;
+        int flyTries;
+        /** A horse or a minecart she has taken for the journey: 1 getting on, 2 riding, 3 getting off. */
+        int ride;
+        int rideId = -1;
+        int rideTicks;
+        int rideAgain;
+        /** A cart: where along the rails it comes nearest the place, and whether it came out of the pockets. */
+        BlockPos railEnd;
+        boolean ownCart;
+        double railBest;
+        /** A gap she is jumping: where from, where to, how far along. */
+        BlockPos leapFrom;
+        BlockPos leapTo;
+        Direction leapDir;
+        int leapGap;
+        int leapStage;
+        int leapTicks;
+        int leapAgain;
         /** Crossing water by the boat from the pockets: how far along, the boat, and when she may try again. */
         int sail;
         int sailTicks;
@@ -198,6 +247,7 @@ public final class Pilot {
         long puppetUntil;
         /** Badly hurt and getting out of the way of what did it. */
         boolean retreat;
+        int retreatTicks;
         /** The bow is down for this many ticks more between one arrow and the next. */
         int drawRest;
         /** A screen of a table, an oven or a chest that she opened and has to shut. */
@@ -357,6 +407,11 @@ public final class Pilot {
         HAD.remove(host.getUuid());
     }
 
+    /** Is there a job of this Host's that was broken off and can be gone on with? */
+    public static boolean paused(PlayerEntity host) {
+        return PAUSED.containsKey(host.getUuid());
+    }
+
     /** The job in hand and what was to follow it are kept for "carry on". False when there was no job. */
     private static boolean remember(ServerPlayerEntity host) {
         Run run = RUNS.get(host.getUuid());
@@ -492,6 +547,11 @@ public final class Pilot {
             strings(host, 0.94F, 0.24F, 0.78F);
         }
 
+        if (LOG && run.ticks % 10 == 0) {
+            Entity aimed = run.attackId < 0 ? null : host.getWorld().getEntityById(run.attackId);
+            com.windykindy49.windyorigins.WindyOrigins.LOGGER.info("PILOT strings on {} attack {} {} away {} flags {} swung {} cooldown {}", host.getGameProfile().getName(), run.attackId, aimed == null ? "-" : aimed.getName().getString(), aimed == null ? 0.0F : host.distanceTo(aimed), run.flags, host.handSwinging, host.getAttackCooldownProgress(0.0F));
+        }
+
         send(host, run);
     }
 
@@ -573,10 +633,25 @@ public final class Pilot {
             run.retreat = true;
         } else if (danger == null || host.getHealth() > low + 5.0F) {
             run.retreat = false;
+            run.retreatTicks = 0;
         }
 
         if (run.ticks % 60 == 1) {
             gear(host);
+        }
+
+        if (host.isFallFlying() && run.fly != 0 && run.task != null) {
+            // On the wing there is the flying and nothing else.
+            if (!run.task.tick(run, host)) {
+                run.fly = 0;
+            }
+
+            if (LOG && run.ticks % 20 == 0) {
+                com.windykindy49.windyorigins.WindyOrigins.LOGGER.info("PILOT flying at {} stage {} flags {} look {} hand {}", String.format("%.1f %.1f %.1f", host.getX(), host.getY(), host.getZ()), run.fly, run.flags, run.look == null ? "" : String.format("%.1f", run.look.y - host.getEyeY()), host.getMainHandStack().getItem());
+            }
+
+            send(host, run);
+            return;
         }
 
         if (run.retreat) {
@@ -1000,6 +1075,506 @@ public final class Pilot {
         return true;
     }
 
+    private static boolean plainRocket(ItemStack stack) {
+        if (!stack.isOf(Items.FIREWORK_ROCKET)) {
+            return false;
+        }
+
+        // Not the kind that goes off in the face.
+        net.minecraft.nbt.NbtCompound tag = stack.getSubNbt("Fireworks");
+        return tag == null || tag.getList("Explosions", 10).isEmpty();
+    }
+
+    /**
+     * Room to get up in: nothing overhead, and nothing in the way of the climb. A shallow climb towards the place
+     * when the way is open; nearly straight up when there are trees or a hill in front; none from under leaves.
+     */
+    private static double runway(ServerPlayerEntity host, Vec3d to) {
+        World world = host.getWorld();
+        BlockPos feet = host.getBlockPos();
+
+        for (int ox = -1; ox <= 1; ox++) {
+            for (int oz = -1; oz <= 1; oz++) {
+                if (world.getTopY(Heightmap.Type.MOTION_BLOCKING, feet.getX() + ox, feet.getZ() + oz) > feet.getY() + (ox == 0 && oz == 0 ? 0 : 1)) {
+                    return 0.0;
+                }
+            }
+        }
+
+        double dx = to.x - host.getX();
+        double dz = to.z - host.getZ();
+        double flat = Math.max(0.01, Math.sqrt(dx * dx + dz * dz));
+
+        for (int d = 2; d <= 26; d += 2) {
+            int x = (int)Math.floor(host.getX() + dx / flat * (double)d);
+            int z = (int)Math.floor(host.getZ() + dz / flat * (double)d);
+
+            for (int side = -1; side <= 1; side++) {
+                int sx = x + (int)Math.round(-dz / flat * (double)side);
+                int sz = z + (int)Math.round(dx / flat * (double)side);
+                if (world.getTopY(Heightmap.Type.MOTION_BLOCKING, sx, sz) > feet.getY() + (int)((double)d * 0.45) - 1) {
+                    return 74.0;
+                }
+            }
+        }
+
+        return 33.0;
+    }
+
+    /** Wings to fly on, rockets enough for the distance, and open sky to do it in. */
+    private static boolean wings(ServerPlayerEntity host, double far) {
+        World world = host.getWorld();
+        if (world.getDimension().hasCeiling() || !world.isSkyVisible(host.getBlockPos().up(2)) || host.isTouchingWater()) {
+            return false;
+        }
+
+        Predicate<ItemStack> usable = stack -> stack.isOf(Items.ELYTRA) && net.minecraft.item.ElytraItem.isUsable(stack);
+        if (!usable.test(host.getEquippedStack(EquipmentSlot.CHEST)) && !carries(host, usable)) {
+            return false;
+        }
+
+        int rockets = 0;
+
+        for (ItemStack stack : host.getInventory().main) {
+            if (plainRocket(stack)) {
+                rockets += stack.getCount();
+            }
+        }
+
+        return rockets >= (int)(far / 45.0) + 3;
+    }
+
+    /**
+     * A flight: the wings on, a jump and the wings open, a rocket; height first, then along; down in a long
+     * shallow glide, nose up at the last, feet on the ground. False when it is over.
+     */
+    private static boolean flying(Run run, ServerPlayerEntity host, Vec3d to) {
+        ServerWorld world = host.getServerWorld();
+        run.flyTicks++;
+        Vec3d was = run.flyLast == null ? host.getPos() : run.flyLast;
+        double speed = host.getPos().subtract(was).horizontalLength();
+        double sink = host.getY() - was.y;
+        run.flyLast = host.getPos();
+        double dx = to.x - host.getX();
+        double dz = to.z - host.getZ();
+        double flat = Math.sqrt(dx * dx + dz * dz);
+        Vec3d ahead = flat < 0.01 ? new Vec3d(1.0, 0.0, 0.0) : new Vec3d(dx / flat, 0.0, dz / flat);
+        if (run.fly == 1) {
+            PlayerInventory inventory = host.getInventory();
+            if (!host.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) {
+                // The wings go on over the shoulders; what was worn there waits in the pack.
+                for (int i = 0; i < inventory.main.size(); i++) {
+                    ItemStack stack = inventory.main.get(i);
+                    if (stack.isOf(Items.ELYTRA) && net.minecraft.item.ElytraItem.isUsable(stack)) {
+                        ItemStack worn = host.getEquippedStack(EquipmentSlot.CHEST);
+                        host.equipStack(EquipmentSlot.CHEST, stack);
+                        inventory.main.set(i, worn);
+                        inventory.markDirty();
+                        host.playerScreenHandler.sendContentUpdates();
+                        BAGGED.put(host.getUuid(), world.getTime());
+                        run.flySwapped = !worn.isEmpty();
+                        break;
+                    }
+                }
+
+                return true;
+            }
+
+            // The rocket is in the hand before the feet leave the ground: it has to go the moment the wings open.
+            int rocket = equip(host, stack -> plainRocket(stack) ? 1.0 : 0.0);
+            run.slot = rocket;
+            run.look = host.getEyePos().add(ahead.x * 20.0, Math.tan(Math.toRadians(run.flyUp <= 0.0 ? 33.0 : run.flyUp)) * 20.0, ahead.z * 20.0);
+            if (host.isFallFlying()) {
+                run.fly = 2;
+                run.flyTicks = 0;
+                run.flyRocket = 0;
+                run.flags |= FLY;
+                return true;
+            }
+
+            if (LOG && run.flyTicks % 5 == 0) {
+                com.windykindy49.windyorigins.WindyOrigins.LOGGER.info("PILOT takeoff t {} at {} ground {} vy {} chest {} hand {} sel {} rocket {}", run.flyTicks, String.format("%.2f %.2f %.2f", host.getX(), host.getY(), host.getZ()), host.isOnGround(), String.format("%.2f", host.getVelocity().y), host.getEquippedStack(EquipmentSlot.CHEST).getItem(), host.getMainHandStack().getItem(), host.getInventory().selectedSlot, rocket);
+            }
+
+            if (run.flyTicks > 90 || rocket < 0) {
+                return false;
+            }
+
+            if (host.getInventory().selectedSlot == rocket) {
+                run.flags |= FLY;
+            }
+
+            return true;
+        }
+
+        if (!host.isFallFlying() && run.fly == 2 && run.flyTicks < 40 && run.flyTries < 3) {
+            // Down again before she was properly up: once more.
+            run.flyTries++;
+            run.fly = 1;
+            run.flyTicks = 0;
+            return true;
+        }
+
+        if (!host.isFallFlying()) {
+            run.flyTries = 0;
+            // Down. What the wings were worn over goes back on.
+            if (run.flySwapped) {
+                PlayerInventory inventory = host.getInventory();
+
+                for (int i = 0; i < inventory.main.size(); i++) {
+                    ItemStack stack = inventory.main.get(i);
+                    if (stack.getItem() instanceof net.minecraft.item.ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
+                        ItemStack wings = host.getEquippedStack(EquipmentSlot.CHEST);
+                        host.equipStack(EquipmentSlot.CHEST, stack);
+                        inventory.main.set(i, wings);
+                        inventory.markDirty();
+                        host.playerScreenHandler.sendContentUpdates();
+                        break;
+                    }
+                }
+
+                run.flySwapped = false;
+            }
+
+            return false;
+        }
+
+        // How high the ground stands under her, where she is going, and on the way between.
+        int under = world.getTopY(Heightmap.Type.MOTION_BLOCKING, host.getBlockX(), host.getBlockZ());
+        int there = world.isChunkLoaded(BlockPos.ofFloored(to)) ? world.getTopY(Heightmap.Type.MOTION_BLOCKING, (int)Math.floor(to.x), (int)Math.floor(to.z)) : under;
+        int highest = under;
+
+        for (double d = 16.0; d <= 64.0; d += 16.0) {
+            BlockPos probe = BlockPos.ofFloored(host.getX() + ahead.x * d, 0.0, host.getZ() + ahead.z * d);
+            if (world.isChunkLoaded(probe)) {
+                highest = Math.max(highest, world.getTopY(Heightmap.Type.MOTION_BLOCKING, probe.getX(), probe.getZ()));
+            }
+        }
+
+        double height = host.getY() - (double)under;
+        double over = host.getY() - (double)there;
+        double pitch;
+        boolean rocket = false;
+        if (run.fly == 2) {
+            if (run.flyTicks < 8) {
+                // The first moments: the take-off rocket is hers to fire by reflex.
+                run.flags |= FLY;
+            }
+
+            double cruise = (double)Math.max(highest, there) + 36.0;
+            if (flat < over * 4.2 + 24.0) {
+                run.fly = 3;
+                run.flyTicks = 0;
+            }
+
+            int close = under;
+
+            for (double d = 3.0; d <= 24.0; d += 3.0) {
+                BlockPos probe = BlockPos.ofFloored(host.getX() + ahead.x * d, 0.0, host.getZ() + ahead.z * d);
+                if (world.isChunkLoaded(probe)) {
+                    close = Math.max(close, world.getTopY(Heightmap.Type.MOTION_BLOCKING, probe.getX(), probe.getZ()));
+                }
+            }
+
+            if (host.getY() < (double)close + 5.0) {
+                // Trees or a hillside right in front: up over them first, nearly straight.
+                pitch = -74.0;
+                rocket = speed < 0.9 && sink < 0.5;
+            } else if (host.getY() < cruise - 4.0) {
+                // Height first.
+                pitch = -32.0;
+                rocket = speed < 1.3;
+            } else {
+                pitch = host.getY() > cruise + 12.0 ? 8.0 : -3.0;
+                rocket = speed < 0.95;
+            }
+        } else {
+            // The glide down: no steeper than the fall is kind to; nose up over the last of it.
+            double slope = Math.toDegrees(Math.atan2(Math.max(0.0, over - 2.0), Math.max(1.0, flat)));
+            pitch = MathHelper.clamp(slope, 4.0, 13.0);
+            if (height < 6.0) {
+                pitch = sink < -0.25 ? -30.0 : -8.0;
+            } else if (height < 14.0 && flat > 40.0) {
+                // Short of the place and low: one more push rather than a walk.
+                pitch = -20.0;
+                rocket = speed < 1.0;
+            }
+        }
+
+        double rad = Math.toRadians(pitch);
+        run.look = host.getEyePos().add(ahead.x * 20.0, -Math.tan(rad) * 20.0, ahead.z * 20.0);
+        if (rocket && run.flyTicks - run.flyRocket > 24) {
+            int slot = equip(host, stack -> plainRocket(stack) ? 1.0 : 0.0);
+            if (slot >= 0) {
+                run.slot = slot;
+                if (host.getInventory().selectedSlot == slot) {
+                    run.flags |= CLICK;
+                    run.flyRocket = run.flyTicks;
+                }
+            }
+        }
+
+        return run.flyTicks < 6000;
+    }
+
+    /**
+     * A long way to go: is there something to ride? A saddled horse of the Host's own (or nobody's) standing near;
+     * or rails underfoot that lead towards the place, with a cart on them or in the pockets.
+     */
+    private static void mount(Run run, ServerPlayerEntity host, Vec3d to) {
+        World world = host.getWorld();
+
+        for (net.minecraft.entity.passive.AbstractHorseEntity horse : world.getEntitiesByClass(net.minecraft.entity.passive.AbstractHorseEntity.class, host.getBoundingBox().expand(10.0, 3.0, 10.0), x -> x.isAlive() && x.isTame() && x.isSaddled() && !x.hasPassengers() && !x.isBaby())) {
+            if ((horse.getOwnerUuid() == null || horse.getOwnerUuid().equals(host.getUuid())) && host.canSee(horse)) {
+                run.ride = 1;
+                run.rideId = horse.getId();
+                run.rideTicks = 0;
+                run.railEnd = null;
+                return;
+            }
+        }
+
+        // Rails within a step or two: followed to see where they go.
+        BlockPos rail = null;
+
+        for (BlockPos pos : BlockPos.iterateOutwards(host.getBlockPos(), 3, 1, 3)) {
+            if (world.getBlockState(pos).isIn(net.minecraft.registry.tag.BlockTags.RAILS)) {
+                rail = pos.toImmutable();
+                break;
+            }
+        }
+
+        if (rail == null) {
+            return;
+        }
+
+        net.minecraft.entity.vehicle.AbstractMinecartEntity standing = null;
+
+        for (net.minecraft.entity.vehicle.AbstractMinecartEntity cart : world.getEntitiesByClass(net.minecraft.entity.vehicle.AbstractMinecartEntity.class, host.getBoundingBox().expand(5.0, 2.0, 5.0), x -> x.isAlive() && !x.hasPassengers() && x.getType() == EntityType.MINECART)) {
+            standing = cart;
+        }
+
+        boolean carried = carries(host, stack -> stack.isOf(Items.MINECART));
+        if (standing == null && !carried) {
+            return;
+        }
+
+        // Along the line, as far as it goes: the rail that lies nearest the place.
+        java.util.ArrayDeque<BlockPos> open = new java.util.ArrayDeque<>();
+        Set<BlockPos> seen = new HashSet<>();
+        open.add(rail);
+        seen.add(rail);
+        BlockPos best = rail;
+        double bestDistance = Vec3d.ofBottomCenter(rail).squaredDistanceTo(to);
+
+        while (!open.isEmpty() && seen.size() < 600) {
+            BlockPos at = open.poll();
+            double d = Vec3d.ofBottomCenter(at).squaredDistanceTo(to);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = at;
+            }
+
+            for (Direction side : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    BlockPos next = at.offset(side).up(dy);
+                    if (world.getBlockState(next).isIn(net.minecraft.registry.tag.BlockTags.RAILS) && seen.add(next)) {
+                        open.add(next);
+                    }
+                }
+            }
+        }
+
+        double now = Math.sqrt(host.getPos().squaredDistanceTo(to));
+        if (Math.sqrt(bestDistance) > now - 24.0) {
+            // They do not lead where she is going.
+            run.rideAgain = run.ticks + 200;
+            return;
+        }
+
+        run.ride = 1;
+        run.rideTicks = 0;
+        run.railEnd = best;
+        run.railBest = Double.MAX_VALUE;
+        run.ownCart = standing == null;
+        run.rideId = standing == null ? -1 : standing.getId();
+        if (standing == null) {
+            // Her own cart goes down on the rail first.
+            run.slot = equip(host, stack -> stack.isOf(Items.MINECART) ? 1.0 : 0.0);
+            run.usePos = rail;
+            run.look = Vec3d.ofCenter(rail);
+        }
+    }
+
+    /** The ride itself. 1 while it lasts, 0 when it is over and the walk goes on, -1 when it came to nothing. */
+    private static int riding(Run run, ServerPlayerEntity host, Vec3d to, double near) {
+        World world = host.getWorld();
+        run.rideTicks++;
+        boolean cart = run.railEnd != null;
+        Entity mount = run.rideId < 0 ? null : world.getEntityById(run.rideId);
+        double dx = to.x - host.getX();
+        double dz = to.z - host.getZ();
+        if (run.ride == 1) {
+            if (host.hasVehicle()) {
+                run.ride = 2;
+                run.rideTicks = 0;
+                return 1;
+            }
+
+            if (run.rideTicks > 160) {
+                return -1;
+            }
+
+            if (cart && mount == null) {
+                // Waiting for the cart she set down to be there; setting it down again if it is not.
+                for (net.minecraft.entity.vehicle.AbstractMinecartEntity near1 : world.getEntitiesByClass(net.minecraft.entity.vehicle.AbstractMinecartEntity.class, host.getBoundingBox().expand(5.0, 2.0, 5.0), x -> x.isAlive() && !x.hasPassengers())) {
+                    run.rideId = near1.getId();
+                    return 1;
+                }
+
+                if (run.rideTicks % 20 == 10) {
+                    for (BlockPos pos : BlockPos.iterateOutwards(host.getBlockPos(), 3, 1, 3)) {
+                        if (world.getBlockState(pos).isIn(net.minecraft.registry.tag.BlockTags.RAILS)) {
+                            run.usePos = pos.toImmutable();
+                            run.look = Vec3d.ofCenter(pos);
+                            break;
+                        }
+                    }
+                }
+
+                run.slot = equip(host, stack -> stack.isOf(Items.MINECART) ? 1.0 : 0.0);
+                return 1;
+            }
+
+            if (mount == null || !mount.isAlive()) {
+                return -1;
+            }
+
+            run.attackId = mount.getId();
+            run.flags |= MOUNT;
+            return 1;
+        }
+
+        if (run.ride == 2) {
+            if (!host.hasVehicle()) {
+                run.ride = 3;
+                run.rideTicks = 0;
+                return 1;
+            }
+
+            if (cart) {
+                // Forward along the rails; off where they come nearest, or where the cart will go no further.
+                Vec3d end = Vec3d.ofBottomCenter(run.railEnd);
+                double left = Math.sqrt((end.x - host.getX()) * (end.x - host.getX()) + (end.z - host.getZ()) * (end.z - host.getZ()));
+                boolean still = host.getVehicle().getVelocity().horizontalLength() < 0.01;
+                run.railBest = Math.min(run.railBest, left);
+                if (left < 1.6 || run.rideTicks > 80 && still || left > run.railBest + 6.0 || run.rideTicks > 2400) {
+                    run.flags |= SNEAK;
+                    return 1;
+                }
+
+                run.way.add(end);
+                run.look = new Vec3d(end.x, host.getEyeY(), end.z);
+                return 1;
+            }
+
+            // A horse goes where the feet would have gone, only faster; and stops when the place is reached.
+            if (dx * dx + dz * dz <= (near + 2.0) * (near + 2.0) || run.stuck >= 5 || run.rideTicks > 4800 || host.isTouchingWater()) {
+                run.flags |= SNEAK;
+                return 1;
+            }
+
+            BlockPos goal = BlockPos.ofFloored(to);
+            if (run.path == null || run.pathGoal == null || !goal.isWithinDistance(run.pathGoal, 1.5) || world.getTime() - run.pathAt > 30L) {
+                plan(run, host, goal);
+            }
+
+            if (!follow(run, host)) {
+                run.way.add(to);
+            }
+
+            run.flags |= SPRINT;
+            return 1;
+        }
+
+        // Off. A cart of her own is taken up again.
+        if (host.hasVehicle()) {
+            run.flags |= SNEAK;
+            return run.rideTicks < 60 ? 1 : -1;
+        }
+
+        if (cart && run.ownCart) {
+            if (mount != null && mount.isAlive() && run.rideTicks < 260) {
+                run.slot = equip(host, Pilot::weaponWorth);
+                run.attackId = mount.getId();
+                run.flags |= SWEEP;
+                if (host.squaredDistanceTo(mount) > 2.2 * 2.2) {
+                    // Within arm's reach of it first.
+                    run.way.add(new Vec3d(mount.getX(), host.getY(), mount.getZ()));
+                }
+
+                return 1;
+            }
+
+            ItemEntity dropped = lying(host, 6.0, stack -> stack.isOf(Items.MINECART));
+            if (dropped != null && run.rideTicks < 400) {
+                run.way.add(dropped.getPos());
+                return 1;
+            }
+        }
+
+        run.ride = 0;
+        run.rideId = -1;
+        run.railEnd = null;
+        run.rideAgain = run.ticks + (cart ? 1200 : 200);
+        run.path = null;
+        return 0;
+    }
+
+    /** A gap jumped: back for a run at it, then at a sprint over the edge. False when it is over, landed or not. */
+    private static boolean leaping(Run run, ServerPlayerEntity host) {
+        World world = host.getWorld();
+        Direction dir = run.leapDir;
+        run.leapTicks++;
+        Vec3d land = Vec3d.ofBottomCenter(run.leapTo);
+        double ahead = (land.x - host.getX()) * (double)dir.getOffsetX() + (land.z - host.getZ()) * (double)dir.getOffsetZ();
+        if (run.leapTicks > 120 || host.getY() < (double)run.leapFrom.getY() - 2.6 || host.isOnGround() && ahead < 0.7 && Math.abs(host.getY() - land.y) < 1.2) {
+            return false;
+        }
+
+        if (run.leapStage == 0) {
+            // The run-up: as far back as there is floor, two steps or three.
+            int back = 1;
+
+            for (int i = 2; i <= (run.leapGap >= 3 ? 3 : 2); i++) {
+                BlockPos cell = run.leapFrom.offset(dir.getOpposite(), i);
+                if (passable(world, cell) && passable(world, cell.up()) && solid(world, cell.down())) {
+                    back = i;
+                } else {
+                    break;
+                }
+            }
+
+            Vec3d start = Vec3d.ofBottomCenter(run.leapFrom.offset(dir.getOpposite(), back));
+            double dx = start.x - host.getX();
+            double dz = start.z - host.getZ();
+            if (dx * dx + dz * dz > 0.12 && run.leapTicks < 50) {
+                run.way.add(start);
+                return true;
+            }
+
+            run.leapStage = 1;
+        }
+
+        run.way.add(land);
+        run.flags |= LEAP;
+        if (run.leapGap >= 2) {
+            run.flags |= SPRINT;
+        }
+
+        return true;
+    }
+
     /**
      * Over water in a boat: it goes onto the water from the bank, she gets in, steers for the place, gets out at
      * the far side, breaks the boat and takes it along. False when that is over, or did not come off.
@@ -1035,6 +1610,9 @@ public final class Pilot {
                 BlockPos nearer = BlockPos.ofFloored(host.getX() + ahead.x * (d - 1.0), host.getY() - 0.5, host.getZ() + ahead.z * (d - 1.0));
                 if (world.getFluidState(cell).isIn(FluidTags.WATER) && world.getFluidState(nearer).isIn(FluidTags.WATER) && !cell.equals(nearer)) {
                     spot = Vec3d.ofCenter(cell).add(0.0, 0.4, 0.0);
+                } else if (world.getBlockState(cell).isIn(net.minecraft.registry.tag.BlockTags.ICE) && world.getBlockState(nearer).isIn(net.minecraft.registry.tag.BlockTags.ICE) && passable(world, cell.up())) {
+                    // An ice road: the boat goes down on the ice itself.
+                    spot = Vec3d.ofCenter(cell).add(0.0, 0.5, 0.0);
                 }
             }
 
@@ -1054,6 +1632,8 @@ public final class Pilot {
             if (host.getVehicle() instanceof net.minecraft.entity.vehicle.BoatEntity) {
                 run.sail = 3;
                 run.sailTicks = 0;
+                run.sailWas = null;
+                run.sailSpeed = 0.0;
                 return true;
             }
 
@@ -1076,10 +1656,24 @@ public final class Pilot {
             double dx = to.x - riding.getX();
             double dz = to.z - riding.getZ();
             double flat = Math.sqrt(dx * dx + dz * dz);
-            boolean aground = !riding.isTouchingWater() || flat > 0.5 && solid(world, BlockPos.ofFloored(riding.getX() + dx / flat * 1.6, riding.getY() + 0.3, riding.getZ() + dz / flat * 1.6));
-            if (flat < 2.5 || run.sailTicks > 40 && aground || run.sailTicks > 3000) {
-                // Land, or as near as the boat will go: out.
+            boolean ice = world.getBlockState(BlockPos.ofFloored(riding.getX(), riding.getY() - 0.2, riding.getZ())).isIn(net.minecraft.registry.tag.BlockTags.ICE);
+            // The boat is rowed from her side of the wire: the server is told where it is, never how fast it goes.
+            // Word of where it is comes in fits and starts, two ticks' worth at once and then none: the highest of late counts.
+            double moved = run.sailWas == null ? 0.0 : riding.getPos().subtract(run.sailWas).horizontalLength();
+            run.sailWas = riding.getPos();
+            run.sailSpeed = Math.max(Math.min(moved, 4.0), run.sailSpeed * 0.92);
+            double speed = run.sailSpeed;
+            boolean aground = !riding.isTouchingWater() && !ice || flat > 0.5 && solid(world, BlockPos.ofFloored(riding.getX() + dx / flat * 1.6, riding.getY() + 0.3, riding.getZ() + dz / flat * 1.6));
+            if (flat < 2.5 && (!ice || speed < 0.2) || run.sailTicks > 40 && aground && speed < 0.05 || run.sailTicks > 3000) {
+                // Land, or as near as the boat will go: out. On ice only once it has all but stopped: a boat left at speed goes on without her.
                 run.flags |= SNEAK;
+                return true;
+            }
+
+            boolean iceEnds = ice && flat > 0.5 && !world.getBlockState(BlockPos.ofFloored(riding.getX() + dx / flat * (2.0 + speed * 40.0), riding.getY() - 0.2, riding.getZ() + dz / flat * (2.0 + speed * 40.0))).isIn(net.minecraft.registry.tag.BlockTags.ICE);
+            if (ice && (flat < 2.0 + speed * 46.0 || iceEnds && speed > 0.25)) {
+                // On ice a boat does not stop when the rowing does: it loses a fiftieth of its speed a tick and no
+                // more, so the oars are lifted that far ahead and it is left to run out.
                 return true;
             }
 
@@ -1109,6 +1703,21 @@ public final class Pilot {
         }
 
         return false;
+    }
+
+    /** Is there ice enough ahead to be worth a boat: a dozen blocks of it in a line from here? */
+    private static boolean iceAhead(ServerPlayerEntity host, BlockPos from) {
+        World world = host.getWorld();
+        Direction dir = host.getHorizontalFacing();
+        int ice = 0;
+
+        for (int i = 0; i < 16; i++) {
+            if (world.getBlockState(from.down().offset(dir, i)).isIn(net.minecraft.registry.tag.BlockTags.ICE)) {
+                ice++;
+            }
+        }
+
+        return ice >= 12;
     }
 
     /** Something hostile that has the body for its target and is close enough to hurt it. */
@@ -1141,31 +1750,212 @@ public final class Pilot {
             }
         }
 
+        // And a player who has had a go at it in the last few seconds.
+        if (host.getAttacker() instanceof PlayerEntity other && other.isAlive() && host.age - host.getLastAttackedTime() < 120 && other.squaredDistanceTo(host) < Math.min(bestDistance, 256.0)) {
+            best = other;
+        }
+
         return best;
+    }
+
+    /** How much a blast of a crystal at this spot would take off this creature: by the game's own sums, armour and all. */
+    private static float blast(LivingEntity who, Vec3d at) {
+        double d = Math.sqrt(who.squaredDistanceTo(at)) / 12.0;
+        if (d > 1.0) {
+            return 0.0F;
+        }
+
+        double impact = 1.0 - d;
+        float raw = (float)((impact * impact + impact) / 2.0 * 7.0 * 12.0 + 1.0);
+        net.minecraft.world.Difficulty difficulty = who.getWorld().getDifficulty();
+        if (who instanceof PlayerEntity) {
+            raw = difficulty == net.minecraft.world.Difficulty.PEACEFUL ? 0.0F : (difficulty == net.minecraft.world.Difficulty.EASY ? Math.min(raw / 2.0F + 1.0F, raw) : (difficulty == net.minecraft.world.Difficulty.HARD ? raw * 1.5F : raw));
+        }
+
+        float left = net.minecraft.entity.DamageUtil.getDamageLeft(raw, (float)who.getArmor(), (float)who.getAttributeValue(EntityAttributes.GENERIC_ARMOR_TOUGHNESS));
+        int guard = net.minecraft.enchantment.EnchantmentHelper.getProtectionAmount(who.getArmorItems(), who.getDamageSources().explosion(null, null));
+        return net.minecraft.entity.DamageUtil.getInflictedDamage(left, (float)guard);
+    }
+
+    /**
+     * End crystals, the way they are fought with: obsidian down by the other's feet, a crystal on it, a blow. Only
+     * when the sums say it costs the other dear and the body little. True while she is at it.
+     */
+    private static boolean crystal(Run run, ServerPlayerEntity host, LivingEntity foe) {
+        World world = host.getWorld();
+        if (!carries(host, stack -> stack.isOf(Items.END_CRYSTAL)) || run.ticks - run.crystalAt < 12) {
+            run.crystalBase = null;
+            return false;
+        }
+
+        // One already standing by the other: hit it.
+        for (net.minecraft.entity.decoration.EndCrystalEntity lit : world.getEntitiesByClass(net.minecraft.entity.decoration.EndCrystalEntity.class, foe.getBoundingBox().expand(3.5), x -> x.isAlive())) {
+            if (host.getEyePos().squaredDistanceTo(lit.getPos()) < 4.2 * 4.2 && blast(host, lit.getPos()) < host.getHealth() - 5.0F) {
+                run.attackId = lit.getId();
+                run.way.clear();
+                run.flags |= SWEEP;
+                run.crystalBase = null;
+                run.crystalAt = run.ticks;
+                return true;
+            }
+        }
+
+        if (run.crystalBase == null || ++run.crystalTicks > 60) {
+            run.crystalBase = null;
+            run.crystalTicks = 0;
+            BlockPos feet = foe.getBlockPos();
+            float bestGain = 5.0F;
+
+            for (BlockPos pos : BlockPos.iterate(feet.add(-2, -1, -2), feet.add(2, 0, 2))) {
+                BlockState state = world.getBlockState(pos);
+                boolean base = state.isOf(Blocks.OBSIDIAN) || state.isOf(Blocks.BEDROCK);
+                boolean could = !base && carries(host, stack -> stack.isOf(Items.OBSIDIAN)) && (state.isAir() || state.isReplaceable()) && solid(world, pos.down());
+                if (!base && !could || !world.getBlockState(pos.up()).isAir() || !world.getBlockState(pos.up(2)).isAir()) {
+                    continue;
+                }
+
+                Vec3d burst = Vec3d.ofBottomCenter(pos.up());
+                if (!world.getOtherEntities(null, new net.minecraft.util.math.Box(pos.up()), x -> x.isAlive() && !(x instanceof ItemEntity)).isEmpty() || host.getEyePos().squaredDistanceTo(burst) > 3.9 * 3.9) {
+                    continue;
+                }
+
+                float theirs = blast(foe, burst);
+                float mine = blast(host, burst);
+                if (mine < host.getHealth() - 5.0F && theirs - mine * 1.5F > bestGain) {
+                    bestGain = theirs - mine * 1.5F;
+                    run.crystalBase = pos.toImmutable();
+                }
+            }
+        }
+
+        if (run.crystalBase == null) {
+            return false;
+        }
+
+        BlockState base = world.getBlockState(run.crystalBase);
+        run.attackId = -1;
+        run.way.clear();
+        if (!base.isOf(Blocks.OBSIDIAN) && !base.isOf(Blocks.BEDROCK)) {
+            if (put(run, host, run.crystalBase, Items.OBSIDIAN) < 0) {
+                run.crystalBase = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        int slot = equip(host, stack -> stack.isOf(Items.END_CRYSTAL) ? 1.0 : 0.0);
+        run.slot = slot;
+        run.placeAgainst = run.crystalBase;
+        run.placeFace = Direction.UP;
+        run.look = Vec3d.ofCenter(run.crystalBase).add(0.0, 0.5, 0.0);
+        return true;
+    }
+
+    /** An ender pearl thrown to land so far off in that direction. */
+    private static void pearl(Run run, ServerPlayerEntity host, Vec3d at) {
+        int slot = equip(host, stack -> stack.isOf(Items.ENDER_PEARL) ? 1.0 : 0.0);
+        if (slot < 0) {
+            return;
+        }
+
+        Vec3d eye = host.getEyePos();
+        double dx = at.x - eye.x;
+        double dz = at.z - eye.z;
+        double flat = Math.max(1.0, Math.sqrt(dx * dx + dz * dz));
+        // What a thing thrown at a block and a half a tick has to be lifted by to come down that far away.
+        double lift = 0.5 * Math.asin(Math.min(1.0, 0.03 * flat * 1.25 / 2.25)) + Math.atan2(at.y - eye.y, flat);
+        run.attackId = -1;
+        run.way.clear();
+        run.slot = slot;
+        run.look = new Vec3d(at.x, eye.y + Math.tan(lift) * flat, at.z);
+        if (host.getItemCooldownManager().isCoolingDown(Items.ENDER_PEARL)) {
+            // It is in the air.
+            run.pearlAt = run.ticks;
+            run.pearlAim = 0;
+            return;
+        }
+
+        if (++run.pearlAim > 40) {
+            // The throw would not come off: on foot, then, and another try later.
+            run.pearlAt = run.ticks;
+            run.pearlAim = 0;
+            return;
+        }
+
+        // Let go only once the eyes are really where the throw has to go: a pearl lands where she looks.
+        Vec3d want = run.look.subtract(eye).normalize();
+        if (host.getInventory().selectedSlot == slot && host.getRotationVec(1.0F).dotProduct(want) > 0.998) {
+            run.flags |= CLICK;
+        }
+    }
+
+    /**
+     * Which way to back off: as near to straight away as there is ground to run on. Never over an edge: a turn
+     * to one side or the other first. Null when there is nowhere to go.
+     */
+    private static Vec3d away(ServerPlayerEntity host, Vec3d off, double far) {
+        World world = host.getWorld();
+        Vec3d dir = new Vec3d(off.x, 0.0, off.z);
+        if (dir.lengthSquared() < 0.01) {
+            dir = new Vec3d(1.0, 0.0, 0.0);
+        }
+
+        dir = dir.normalize();
+
+        for (double turn : new double[]{0.0, 40.0, -40.0, 80.0, -80.0, 125.0, -125.0}) {
+            double rad = Math.toRadians(turn);
+            Vec3d way = new Vec3d(dir.x * Math.cos(rad) - dir.z * Math.sin(rad), 0.0, dir.x * Math.sin(rad) + dir.z * Math.cos(rad));
+            boolean ground = true;
+
+            for (double d = 1.5; d <= 6.0 && ground; d += 1.5) {
+                BlockPos cell = BlockPos.ofFloored(host.getX() + way.x * d, host.getY() + 0.5, host.getZ() + way.z * d);
+                ground = drop(world, cell) <= 3 && !world.getFluidState(cell).isIn(FluidTags.LAVA);
+            }
+
+            if (ground) {
+                return host.getPos().add(way.multiply(far));
+            }
+        }
+
+        return null;
     }
 
     /** Away from what is after the body; once out of its reach, something to eat. Cornered, she fights. */
     private static void retreat(Run run, ServerPlayerEntity host, LivingEntity from) {
         double away = from == null ? 99.0 : (double)host.distanceTo(from);
+        boolean aid = carries(host, stack -> aidWorth(stack) > 0.0);
+        run.retreatTicks++;
         if (from != null && away < 10.0) {
-            if (run.stuck >= 3) {
+            // Nobody outruns an arrow with their back to it; and with nothing to mend with, running only puts it off.
+            boolean shoots = from instanceof net.minecraft.entity.ai.RangedAttackMob;
+            if (shoots || run.stuck >= 3 || !aid && run.retreatTicks > 160) {
                 fight(run, host, from);
                 return;
             }
 
-            Vec3d off = host.getPos().subtract(from.getPos()).multiply(1.0, 0.0, 1.0);
-            if (off.lengthSquared() < 0.01) {
-                off = new Vec3d(1.0, 0.0, 0.0);
-            }
+            // A few steps clear is enough to get a bottle or an apple down; if it will not be shaken off, she takes it anyway.
+            if (!aid || away < 6.0 && run.retreatTicks < 70) {
+                Vec3d to = away(host, host.getPos().subtract(from.getPos()), 12.0);
+                if (to == null) {
+                    // Nowhere to run but over an edge: she stands and fights.
+                    fight(run, host, from);
+                    return;
+                }
 
-            Vec3d to = host.getPos().add(off.normalize().multiply(12.0));
-            walk(run, host, surface(host.getWorld(), to.x, to.z, host.getY()), 1.0, NONE, true);
-            run.flags |= SPRINT;
-            if (shielded(host) && from instanceof net.minecraft.entity.ai.RangedAttackMob) {
-                run.flags |= USE;
+                walk(run, host, surface(host.getWorld(), to.x, to.z, host.getY()), 1.0, NONE, true);
+                run.flags |= SPRINT;
+                return;
             }
+        }
 
-            return;
+        if (from instanceof PlayerEntity && !aid && away < 8.0 && run.ticks - run.pearlAt > 60 && carries(host, stack -> stack.isOf(Items.ENDER_PEARL))) {
+            // Nothing to mend with and a player on top of the body: a pearl the other way.
+            Vec3d to = away(host, host.getPos().subtract(from.getPos()), 22.0);
+            if (to != null) {
+                pearl(run, host, to);
+                return;
+            }
         }
 
         int food = equip(host, Pilot::aidWorth);
@@ -1243,7 +2033,8 @@ public final class Pilot {
         double dx = foe.getX() - eye.x;
         double dz = foe.getZ() - eye.z;
         double time = Math.sqrt(dx * dx + dz * dz) / 2.7;
-        Vec3d lead = foe.getVelocity().multiply(time, 0.0, time);
+        // A player's speed the server is never told: it is what she has seen of where he was a tick ago.
+        Vec3d lead = (foe instanceof PlayerEntity ? run.foeSpeed : foe.getVelocity()).multiply(time, 0.0, time);
         run.look = new Vec3d(foe.getX() + lead.x, foe.getY() + (double)foe.getHeight() * 0.6 + 0.03 * time * time, foe.getZ() + lead.z);
         boolean inHand = host.getInventory().selectedSlot == run.slot && host.getMainHandStack().getItem() instanceof net.minecraft.item.BowItem;
         if (!inHand) {
@@ -1349,13 +2140,62 @@ public final class Pilot {
     static boolean walk(Run run, ServerPlayerEntity host, Vec3d to, double near, int dig, boolean flat) {
         double dx = to.x - host.getX();
         double dz = to.z - host.getZ();
-        if (dx * dx + dz * dz <= near * near && (flat || Math.abs(to.y - host.getY()) <= 2.2)) {
+        boolean busy = run.sail != 0 || run.leapTo != null || run.fallEdge != null || run.ride != 0 || run.fly != 0;
+        if (!busy && dx * dx + dz * dz <= near * near && (flat || Math.abs(to.y - host.getY()) <= 2.2)) {
             return true;
         }
 
         if (flat && dx * dx + dz * dz < 36.0) {
             // A spot on the map, not a height: close to it she stops caring what stands on it.
             to = new Vec3d(to.x, host.getY(), to.z);
+        }
+
+        if (run.fly != 0) {
+            if (flying(run, host, to)) {
+                return false;
+            }
+
+            run.fly = 0;
+            run.flyAgain = run.ticks + 400;
+            run.path = null;
+            run.way.clear();
+        } else if (run.ticks >= run.flyAgain && run.ticks % 20 == 7 && dx * dx + dz * dz > 120.0 * 120.0 && host.isOnGround() && !host.hasVehicle() && run.ride == 0 && run.sail == 0 && wings(host, Math.sqrt(dx * dx + dz * dz)) && (run.flyUp = runway(host, to)) > 0.0) {
+            run.fly = 1;
+            run.flyTicks = 0;
+            run.flyRocket = -100;
+            run.flyLast = host.getPos();
+            return false;
+        }
+
+        if (run.ride != 0) {
+            int state = riding(run, host, to, near);
+            if (state > 0) {
+                return false;
+            }
+
+            if (state < 0) {
+                // Off, and no more of that for a while: the rest on foot.
+                run.ride = 0;
+                run.rideId = -1;
+                run.railEnd = null;
+                run.rideAgain = run.ticks + 600;
+                run.path = null;
+                run.way.clear();
+                return false;
+            }
+        } else if (run.ticks >= run.rideAgain && run.ticks % 20 == 3 && dx * dx + dz * dz > 40.0 * 40.0 && host.isOnGround() && !host.hasVehicle() && run.sail == 0 && run.leapTo == null) {
+            mount(run, host, to);
+        }
+
+        if (run.leapTo != null) {
+            if (leaping(run, host)) {
+                return false;
+            }
+
+            run.leapTo = null;
+            run.leapAgain = run.ticks + 60;
+            run.path = null;
+            run.way.clear();
         }
 
         if (run.sail != 0) {
@@ -1436,7 +2276,8 @@ public final class Pilot {
             int wet = 0;
 
             for (int i = 0; i < Math.min(4, run.way.size()); i++) {
-                wet += world.getFluidState(BlockPos.ofFloored(run.way.get(i))).isIn(FluidTags.WATER) || world.getFluidState(BlockPos.ofFloored(run.way.get(i)).down()).isIn(FluidTags.WATER) ? 1 : 0;
+                BlockPos step = BlockPos.ofFloored(run.way.get(i));
+                wet += world.getFluidState(step).isIn(FluidTags.WATER) || world.getFluidState(step.down()).isIn(FluidTags.WATER) || world.getBlockState(step.down()).isIn(net.minecraft.registry.tag.BlockTags.ICE) && iceAhead(host, step) ? 1 : 0;
             }
 
             if (wet >= 2 && carries(host, stack -> stack.getItem() instanceof net.minecraft.item.BoatItem)) {
@@ -1459,6 +2300,24 @@ public final class Pilot {
 
         if (dx * dx + dz * dz > 100.0) {
             run.flags |= SPRINT;
+            if (dx * dx + dz * dz > 400.0 && run.way.size() >= 5 && host.getHungerManager().getFoodLevel() > 10 && run.usePos == null) {
+                // The next five steps in one line, on one level, with room overhead: she bounds along.
+                World world = host.getWorld();
+                Vec3d first = run.way.get(0);
+                Vec3d last = run.way.get(4);
+                boolean level = true;
+
+                for (int i = 0; i < 5 && level; i++) {
+                    Vec3d step = run.way.get(i);
+                    double across = Math.abs((last.x - first.x) * (step.z - first.z) - (last.z - first.z) * (step.x - first.x));
+                    BlockPos cell = BlockPos.ofFloored(step);
+                    level = Math.abs(step.y - host.getY()) < 0.1 && across < 2.0 && passable(world, cell.up(2)) && solid(world, cell.down()) && world.getFluidState(cell).isEmpty();
+                }
+
+                if (level) {
+                    run.flags |= HOP;
+                }
+            }
         }
 
         return false;
@@ -1519,6 +2378,28 @@ public final class Pilot {
         return true;
     }
 
+    /**
+     * The cell the body is standing in. Crouched out over an edge, its middle is already past the block that
+     * holds it up: then it is that block's cell, not the air the middle hangs in.
+     */
+    static BlockPos standing(ServerPlayerEntity host) {
+        World world = host.getWorld();
+        BlockPos at = host.getBlockPos();
+        if (!host.isOnGround() || solid(world, at.down())) {
+            return at;
+        }
+
+        for (Direction side : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
+            BlockPos beside = at.offset(side);
+            double off = Math.abs(((double)beside.getX() + 0.5 - host.getX()) * (double)side.getOffsetX() + ((double)beside.getZ() + 0.5 - host.getZ()) * (double)side.getOffsetZ());
+            if (solid(world, beside.down()) && off < 0.86) {
+                return beside;
+            }
+        }
+
+        return at;
+    }
+
     /** How far the body would fall from this cell; 99 when it would land in lava or keep falling. */
     private static int drop(World world, BlockPos from) {
         for (int i = 0; i < 12; i++) {
@@ -1543,7 +2424,8 @@ public final class Pilot {
      */
     static void burrow(Run run, ServerPlayerEntity host, Vec3d to, Direction keep, boolean anything) {
         World world = host.getWorld();
-        BlockPos feet = host.getBlockPos();
+        // Over an edge it is the cell that still holds the body up; on a step down of her own stair, the cell she is stepping into.
+        BlockPos feet = host.isSneaking() || drop(world, host.getBlockPos()) > 3 ? standing(host) : host.getBlockPos();
         double dx = to.x - host.getX();
         double dz = to.z - host.getZ();
         double dy = to.y - host.getY();
@@ -1563,7 +2445,8 @@ public final class Pilot {
         // First to the middle of the cell: a tunnel is cut from where the body stands.
         double offX = (double)feet.getX() + 0.5 - host.getX();
         double offZ = (double)feet.getZ() + 0.5 - host.getZ();
-        if (offX * offX + offZ * offZ > 0.16 && passable(world, feet) && passable(world, feet.up())) {
+        boolean bridging = drop(world, feet.offset(dir)) > 3 && hasFiller(host);
+        if (!bridging && offX * offX + offZ * offZ > 0.16 && passable(world, feet) && passable(world, feet.up())) {
             run.way.add(new Vec3d((double)feet.getX() + 0.5, host.getY(), (double)feet.getZ() + 0.5));
             return;
         }
@@ -1593,6 +2476,43 @@ public final class Pilot {
             if (drop(world, next) > 3) {
                 // A hole or lava ahead. With ground beyond it and blocks in the pockets it is bridged; otherwise not that way.
                 boolean beyond = false;
+
+                // A gap of one, two or three with ground to land on: she jumps it, with a run at the wider ones.
+                if (run.ticks >= run.leapAgain && host.isOnGround() && !host.isTouchingWater()) {
+                    for (int i = 2; i <= 4; i++) {
+                        BlockPos over = feet.offset(dir, i - 1);
+                        BlockPos land = feet.offset(dir, i);
+                        if (!passable(world, over) || !passable(world, over.up()) || !passable(world, over.up(2)) || drop(world, over) <= 3) {
+                            break;
+                        }
+
+                        if (!passable(world, land) || !passable(world, land.up()) || !passable(world, land.up(2))) {
+                            break;
+                        }
+
+                        int fall = drop(world, land);
+                        if (fall <= 1) {
+                            int gap = i - 1;
+                            BlockPos run1 = feet.offset(dir.getOpposite());
+                            BlockPos run2 = feet.offset(dir.getOpposite(), 2);
+                            boolean room1 = passable(world, run1) && passable(world, run1.up()) && solid(world, run1.down());
+                            boolean room2 = room1 && passable(world, run2) && passable(world, run2.up()) && solid(world, run2.down());
+                            boolean deadly = depth(world, over) >= 99;
+                            boolean may = gap == 1 || gap == 2 && room1 || gap == 3 && room2 && host.getHungerManager().getFoodLevel() > 6 && !(deadly && hasFiller(host));
+                            if (may) {
+                                run.leapFrom = feet;
+                                run.leapTo = land.down(fall);
+                                run.leapDir = dir;
+                                run.leapGap = gap;
+                                run.leapStage = gap == 1 ? 1 : 0;
+                                run.leapTicks = 0;
+                                return;
+                            }
+
+                            break;
+                        }
+                    }
+                }
 
                 int reach = Math.min(24, fillers(host) + 1);
 
@@ -1774,7 +2694,19 @@ public final class Pilot {
             return 0;
         }
 
-        BlockPos feet = host.getBlockPos();
+        BlockPos feet = standing(host);
+        if (face.getAxis().isHorizontal() && against.getY() < feet.getY() && against.getX() == feet.getX() && against.getZ() == feet.getZ() && host.isOnGround()) {
+            // Onto the side of the block she stands on, out over the drop. That face is seen only from past the
+            // edge: she goes to it crouched, turns her back to the gap and looks down at it between her feet.
+            run.way.add(new Vec3d((double)against.getX() + 0.5 + (double)face.getOffsetX() * 0.78, host.getY(), (double)against.getZ() + 0.5 + (double)face.getOffsetZ() * 0.78));
+            run.slot = slot;
+            run.placeAgainst = against;
+            run.placeFace = face;
+            run.look = Vec3d.ofCenter(against).add((double)face.getOffsetX() * 0.5, 0.22, (double)face.getOffsetZ() * 0.5);
+            run.flags |= SNEAK | BACK;
+            return 0;
+        }
+
         if ((cell.getX() != feet.getX() || cell.getZ() != feet.getZ()) && host.getBoundingBox().intersects(new net.minecraft.util.math.Box(cell))) {
             // A shoulder is in the cell: nothing goes where the body stands. Back to the middle of her own first.
             run.way.add(new Vec3d((double)feet.getX() + 0.5, host.getY(), (double)feet.getZ() + 0.5));
@@ -1832,6 +2764,50 @@ public final class Pilot {
     static void fight(Run run, ServerPlayerEntity host, LivingEntity foe) {
         double away = (double)host.distanceTo(foe);
         boolean sees = host.canSee(foe);
+        boolean duel = foe instanceof PlayerEntity;
+        // Where it is going: by where it was a tick ago, since nobody tells the server how fast a player means to move.
+        if (run.foeId != foe.getId() || run.foeWas == null) {
+            run.foeId = foe.getId();
+            run.foeWas = foe.getPos();
+            run.foeSpeed = Vec3d.ZERO;
+        } else {
+            run.foeSpeed = run.foeSpeed.multiply(0.6).add(foe.getPos().subtract(run.foeWas).multiply(0.4));
+            run.foeWas = foe.getPos();
+        }
+
+        if (duel && LOG && run.ticks % 10 == 0) {
+            com.windykindy49.windyorigins.WindyOrigins.LOGGER.info("PILOT duel away {} sees {} pearls {} since {}", String.format("%.1f", away), sees, carries(host, stack -> stack.isOf(Items.ENDER_PEARL)), run.ticks - run.pearlAt);
+        }
+
+        if (duel) {
+            // Against a player the off hand holds what brings the body back from the dead, if there is one.
+            if (!host.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
+                PlayerInventory inventory = host.getInventory();
+
+                for (int i = 0; i < inventory.main.size(); i++) {
+                    if (inventory.main.get(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                        ItemStack was = host.getOffHandStack();
+                        inventory.offHand.set(0, inventory.main.get(i));
+                        inventory.main.set(i, was);
+                        inventory.markDirty();
+                        host.playerScreenHandler.sendContentUpdates();
+                        break;
+                    }
+                }
+            }
+
+            // Too far to run down: a pearl at their feet.
+            if (sees && away > 14.0 && away < 46.0 && run.ticks - run.pearlAt > 50 && carries(host, stack -> stack.isOf(Items.ENDER_PEARL))) {
+                Vec3d spot = foe.getPos().add(run.foeSpeed.multiply(Math.min(30.0, away / 1.3)));
+                pearl(run, host, spot);
+                return;
+            }
+
+            if (sees && away < 6.5 && crystal(run, host, foe)) {
+                return;
+            }
+        }
+
         if (sees && away > 7.0 && away < 40.0 && hasBow(host) && !(foe instanceof net.minecraft.entity.mob.EndermanEntity)) {
             // Too far for the arm, near enough for an arrow.
             shoot(run, host, foe);
@@ -1862,7 +2838,8 @@ public final class Pilot {
 
         if (shielded(host) && sees) {
             // The shield goes up at what shoots, at a creeper about to go off, and between one swing and the next.
-            boolean shoots = foe instanceof net.minecraft.entity.ai.RangedAttackMob && away > 3.5;
+            // Up while the bow is drawn at her; down, and in at a run, while it is being nocked again.
+            boolean shoots = foe instanceof net.minecraft.entity.ai.RangedAttackMob && away > 2.5 && (foe.isUsingItem() || !(foe instanceof MobEntity));
             boolean fuse = foe instanceof CreeperEntity creeper && creeper.getFuseSpeed() > 0;
             boolean between = away < 3.8 && host.getAttackCooldownProgress(0.0F) < 0.7F;
             if (shoots || fuse || between) {
@@ -1879,21 +2856,27 @@ public final class Pilot {
 
         if (foe instanceof CreeperEntity creeper && creeper.getFuseSpeed() > 0 && away < 7.0) {
             // About to go off: nobody stands there swinging.
-            Vec3d back = host.getPos().subtract(foe.getPos()).multiply(1.0, 0.0, 1.0);
-            if (back.lengthSquared() > 0.01) {
+            Vec3d back = away(host, host.getPos().subtract(foe.getPos()), 5.0);
+            if (back != null) {
                 run.attackId = -1;
-                run.way.add(host.getPos().add(back.normalize().multiply(5.0)));
+                run.way.add(back);
                 run.flags |= SPRINT;
                 return;
             }
         }
 
         if (away > 3.2 || !host.canSee(foe)) {
-            walk(run, host, foe.getPos(), 1.2, NONE, false);
+            // Not at where it stands but at where it will be by the time the body gets there.
+            Vec3d meet = foe.getPos().add(run.foeSpeed.multiply(Math.min(16.0, away / 0.28)).multiply(1.0, 0.0, 1.0));
+            walk(run, host, away > 6.0 ? meet : foe.getPos(), 1.2, NONE, false);
         }
 
-        if (away > 8.0) {
+        if (away > 8.0 || away > 3.2 && foe instanceof net.minecraft.entity.ai.RangedAttackMob || duel && away > 2.4) {
             run.flags |= SPRINT;
+        }
+
+        if (duel) {
+            run.flags |= DUEL;
         }
     }
 
@@ -2145,6 +3128,8 @@ public final class Pilot {
         private final int linger;
         private LivingEntity foe;
         private int kills;
+        private int unseen;
+        private Vec3d lastSeen;
         private int after;
         private int idle;
         private int chase;
@@ -2227,6 +3212,20 @@ public final class Pilot {
 
             if (this.foe != null) {
                 this.idle = 0;
+                if (host.canSee(this.foe)) {
+                    this.unseen = 0;
+                    this.lastSeen = this.foe.getPos().add(run.foeSpeed.multiply(20.0).multiply(1.0, 0.0, 1.0));
+                } else if (++this.unseen > 30 && this.lastSeen != null && this.foe.squaredDistanceTo(host) > 36.0) {
+                    // Out of sight: to where it was going when she last saw it, and a look round from there.
+                    if (this.unseen > 260 || walk(run, host, this.lastSeen, 2.0, NATURAL, true)) {
+                        this.foe = null;
+                        this.unseen = 0;
+                    }
+
+                    run.flags |= SPRINT;
+                    return true;
+                }
+
                 fight(run, host, this.foe);
                 return true;
             }
@@ -2803,7 +3802,12 @@ public final class Pilot {
                 away = new Vec3d(1.0, 0.0, 0.0);
             }
 
-            Vec3d to = host.getPos().add(away.normalize().multiply(14.0));
+            Vec3d to = away(host, away, 14.0);
+            if (to == null) {
+                run.end("pilot_lost");
+                return false;
+            }
+
             walk(run, host, surface(host.getWorld(), to.x, to.z, host.getY()), 1.0, NONE, true);
             run.flags |= SPRINT;
             return true;
@@ -3362,7 +4366,15 @@ public final class Pilot {
             }
 
             LivingEntity target = one;
-            go(host, new Hunt(host, e -> e == target, 1, false, 60), held);
+            // Named, or pointed at: she knows who. Where, only if they can be seen or heard from here; otherwise she
+            // goes looking, as she would for anything else, and falls on them when they come into view.
+            boolean known = host.canSee(target) || target.squaredDistanceTo(host) < 16.0 * 16.0;
+            Hunt chase = new Hunt(host, e -> e == target, 1, false, known ? 60 : 900);
+            if (known) {
+                chase.foe = target;
+            }
+
+            go(host, chase, held);
         } else if (order.anyPlayer()) {
             HostManager.say(host, "pilot_none", 2);
         } else if (order.what().equals("food") || order.what().equals("animals")) {
@@ -3783,7 +4795,7 @@ public final class Pilot {
         @Override
         public boolean tick(Run run, ServerPlayerEntity host) {
             World world = host.getWorld();
-            BlockPos feet = host.getBlockPos();
+            BlockPos feet = standing(host);
             if (!feet.equals(this.lastCell)) {
                 this.lastCell = feet;
                 this.steps++;
