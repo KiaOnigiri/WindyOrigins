@@ -40,11 +40,13 @@ public enum HostCommand {
     STATUS(0, 0, false),
     HELP(0, 0, false),
     PVP(0, 0, false),
+    // The body itself: she takes it and waits for orders, or gives it back.
+    PILOT(12, 0, false),
     CHAT(0, 0, false);
 
     public static final int PAGE = 8;
     /** How many of the requests have a place on the wheel: everything but small talk. */
-    public static final int WHEEL = 29;
+    public static final int WHEEL = 30;
     public final int heat;
     public final int cooldown;
     public final boolean targeted;

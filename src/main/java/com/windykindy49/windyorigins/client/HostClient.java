@@ -688,6 +688,7 @@ public final class HostClient {
             int var4 = var0.getScaledWindowWidth();
             int var5 = var0.getScaledWindowHeight();
             VoltaFx.renderHud(var0, var1, var4, var5);
+            PilotClient.renderHud(var0, var4, var5);
             if (flashTicks > 0) {
                 var0.fill(0, 0, var4, var5, flashColor | Math.min(200, flashTicks * 26) << 24);
             }
