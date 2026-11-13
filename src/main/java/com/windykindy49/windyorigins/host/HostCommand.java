@@ -41,7 +41,7 @@ public enum HostCommand {
     HELP(0, 0, false),
     PVP(0, 0, false),
     // The body itself: she takes it and waits for orders, or gives it back.
-    PILOT(12, 0, false),
+    PILOT(5, 0, false),
     CHAT(0, 0, false);
 
     public static final int PAGE = 8;

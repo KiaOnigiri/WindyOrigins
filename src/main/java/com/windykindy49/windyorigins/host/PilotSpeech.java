@@ -85,6 +85,42 @@ public final class PilotSpeech {
         "еще раз", "еще$", "повтори", "снова$", "заново", "ще раз", "again", "once more", "repeat", "one more time", "nochmal", "noch einmal", "wiederhole",
         "otra vez", "repite", "de nuevo", "encore$", "repete", "jeszcze raz", "powtorz", "de novo", "repita", "mais uma vez", "もう一回", "もう一度", "再来", "再一次", "重复"
     };
+    /** "Carry on": what the heat, or the Host's own hands, broke off. */
+    private static final String[] RESUME = {
+        "продолж", "доделай", "закончи", "продовж", "continue", "carry on", "resume", "keep going", "finish it", "mach weiter", "weitermachen", "continua", "sigue$",
+        "termina", "kontynuuj", "dokoncz", "続けて", "続き", "继续"
+    };
+    /** Putting things away, and where: chests by hand. */
+    private static final String[] STORE = {
+        "сложи", "положи", "закинь", "скинь", "выложи", "спрячь$", "склади", "поклади", "store$", "stash", "deposit", "unload", "lagere", "verstau", "guarda$",
+        "deposita", "range$", "depose$", "schowaj", "odloz", "guarde$", "しまって", "入れて", "存放", "放进"
+    };
+    private static final String[] WITHDRAW = {
+        "возьми$", "достань", "забери", "вытащи", "принеси", "візьми$", "дістань", "take$", "get$", "grab", "fetch", "withdraw", "bring", "nimm$", "hol$", "hole$",
+        "toma$", "coge$", "saca$", "trae$", "prends$", "sors$", "apporte", "wez$", "wyjmij", "przynies", "pegue$", "tire$", "traga$", "取って", "取り出して", "拿", "取出"
+    };
+    private static final String[] CONTAINER = {
+        "сундук", "бочк", "бочонок", "шалкер", "склад", "ящик", "хранилищ", "скрин", "діжк", "chest", "barrel", "shulker", "storage", "storeroom", "crate", "truhe",
+        "fass$", "lager$", "cofre", "barril", "almacen", "coffre", "tonneau", "entrepot", "skrzyn", "beczk", "magazyn", "bau$", "deposito", "チェスト", "樽", "倉庫", "箱子", "木桶", "仓库"
+    };
+    private static final String[] BARREL = {"бочк", "бочонок", "діжк", "barrel", "fass$", "barril", "tonneau", "beczk", "樽", "木桶"};
+    private static final String[] SHULKER = {"шалкер", "shulker", "シュルカー", "潜影盒"};
+    private static final String[] CHEST = {"сундук", "скрин", "chest", "truhe", "cofre", "coffre", "skrzyn", "bau$", "チェスト", "箱子"};
+    private static final String[] STOREROOM = {"склад", "хранилищ", "storage", "storeroom", "warehouse", "lager$", "almacen", "entrepot", "magazyn", "deposito", "倉庫", "仓库"};
+    private static final String[] LOOT = {"лут", "добыт", "добыч", "награбленн", "собранн", "здобич", "здобут", "loot", "haul$", "spoils", "takings", "beute", "botin", "butin", "lup$", "saque$", "戦利品", "战利品"};
+    private static final String[] LEFT = {"слева", "левый", "левую", "левом", "левой", "левая", "лівий", "ліворуч", "left", "links", "linke", "izquierda", "gauche", "lewo", "lewej", "esquerda", "左"};
+    private static final String[] RIGHT = {"справа", "правый", "правую", "правом", "правой", "правая", "праворуч", "right", "rechts", "rechte", "derecha", "droite", "prawo", "prawej", "direita", "右"};
+    /** "Deal with them", "killer mode": every enemy there is, players among them only while the Host has players switched on. */
+    private static final String[] DEAL = {
+        "разберись", "разделайся", "зачисти", "расправься", "розберись", "deal with", "sort them out", "take care of them", "clear them out", "wipe them out",
+        "kummere dich", "raum auf", "encargate", "ocupate de", "occupe toi", "regle leur", "zajmij sie", "rozpraw sie", "cuide deles", "acabe com", "片付けて", "始末して", "解决他们", "收拾他们"
+    };
+    private static final String[] KILLER = {
+        "режим убийцы", "режим убийств", "режим убийства", "режим боя", "боевой режим", "режим вбивці", "бойовий режим", "killer mode", "kill mode", "murder mode",
+        "combat mode", "berserk", "rampage", "totungsmodus", "kampfmodus", "modo asesino", "modo combate", "mode tueur", "mode combat", "tryb zabojcy", "tryb walki",
+        "modo assassino", "キラーモード", "戦闘モード", "杀手模式", "战斗模式"
+    };
+    private static final java.util.regex.Pattern LABELLED = java.util.regex.Pattern.compile("(?iu)(?<![\\p{L}\\d])(x|y|z|х|у|з|икс|игрек|зет)\\s*[:=]?\\s*(-?\\d+(?:\\.\\d+)?)");
     private static final String[] CROPS = {
         "урожай", "посев", "грядк", "врожай", "crops", "the harvest", "the field", "ernte", "feld$", "cosecha", "cultivos", "recolte", "cultures", "plony",
         "zbiory", "colheita", "plantacao", "作物", "収穫", "庄稼", "农作物"
@@ -92,6 +128,30 @@ public final class PilotSpeech {
     private static final String[] RETURN = {
         "вернись", "возвращайся", "вернуться", "обратно", "повертайся", "назад$", "come back", "return", "go back", "get back", "komm zuruck", "kehr zuruck",
         "zuruck$", "vuelve", "regresa", "reviens", "retourne", "wroc$", "wracaj", "volte$", "volta aqui", "retorne", "戻って", "帰ってきて", "回来", "返回"
+    };
+    private static final String[] CRAFT = {
+        "скрафт", "крафт", "смастери", "изготовь", "сооруди", "створи", "змайструй", "craft", "stelle her", "stell her", "fertige", "crafte", "fabrica$", "craftea",
+        "fabrique$", "wytworz", "stworz", "fabrique", "crie$", "クラフト", "作って", "合成", "制作"
+    };
+    /** "Make", which is as often "do": a request to craft only when nothing else in the sentence is hers to do. */
+    private static final String[] MAKE = {"сделай", "зроби", "make", "mach$", "mache$", "haz$", "fais$", "zrob$", "faca$", "做"};
+    private static final String[] SMELT = {
+        "переплав", "расплавь", "плавь$", "выплави", "пожарь", "зажарь", "приготовь", "обожги", "переплави", "засмаж", "smelt", "cook", "roast", "schmelz",
+        "brat$", "brate$", "koche", "funde$", "cocina$", "asa$", "fais fondre", "fonds$", "cuis$", "przetop", "upiecz", "usmaz", "derreta", "asse$", "cozinhe",
+        "精錬", "焼いて", "烧", "熔炼", "烤"
+    };
+    private static final String[] BRIDGE = {"мост", "міст$", "моста$", "bridge", "brucke", "puente", "pont$", "most$", "mostu$", "ponte$", "橋", "桥"};
+    private static final String[] CLIMB = {
+        "столб", "поднимись", "наверх", "заберись", "вылези", "стовп", "піднімись", "pillar", "tower up", "climb up", "go up", "get out", "turm$", "hoch$",
+        "pilar$", "sube$", "pilier", "slup$", "wejdz", "suba$", "柱", "登って", "上がって", "往上", "爬上去"
+    };
+    private static final String[] TORCH = {"факел", "смолоскип", "torch", "fackel", "antorcha", "torche", "pochodni", "tocha", "松明", "火把"};
+    private static final String[] PUT = {
+        "поставь", "установи", "воткни", "постав$", "place$", "put$", "stell$", "stelle$", "setz", "pon$", "coloca", "pose$", "postaw", "coloque", "置いて", "放", "插"
+    };
+    private static final String[] SHELTER = {
+        "укрыти", "спрячься", "закопайся", "убежищ", "схованк", "сховайся", "shelter", "hide$", "bunker", "dig in", "unterschlupf", "versteck", "refugio",
+        "escondete", "abri$", "cache toi", "schron", "ukryj", "abrigo", "esconda", "隠れて", "シェルター", "躲起来", "避难所"
     };
     private static final String[] FOLLOW = {
         "следуй", "иди за", "ходи за", "беги за", "преследуй", "слідуй", "йди за", "follow", "chase", "go after", "folge", "verfolge", "sigue", "persigue",
@@ -149,7 +209,7 @@ public final class PilotSpeech {
         "zur$", "und$", "nach$", "bitte", "para$", "mi$", "por$", "favor$", "y$", "el$", "la$", "los$", "las$", "un$", "una$", "al$", "pour$", "moi$", "et$", "le$",
         "les$", "des$", "du$", "au$", "dla$", "mnie$", "i$", "do$", "prosze", "mim$", "e$", "o$", "os$", "as$", "um$", "uma$", "ao$", "を", "に", "へ", "の", "的", "给我"
     };
-    private static final String[][] CONTROL = {GO, SELF, TAKE, RELEASE, KILL, FARM, GUARD, FLEE, HOME, EAT, SLEEP, AGAIN, RETURN, FOLLOW, EXPLORE, RAZE, THAT, THERE, FORWARD, NORTH, SOUTH, EAST, WEST, LITTLE};
+    private static final String[][] CONTROL = {GO, SELF, TAKE, RELEASE, KILL, FARM, GUARD, FLEE, HOME, EAT, SLEEP, AGAIN, RESUME, DEAL, KILLER, RETURN, CRAFT, MAKE, SMELT, BRIDGE, CLIMB, PUT, SHELTER, FOLLOW, EXPLORE, RAZE, THAT, THERE, FORWARD, NORTH, SOUTH, EAST, WEST, LITTLE};
     private static final Pattern COORDS = Pattern.compile("(-?\\d{1,7})[\\s,;]+(-?\\d{1,4})[\\s,;]+(-?\\d{1,7})|(-?\\d{1,7})[\\s,;]+(-?\\d{1,7})");
 
     private static boolean has(String text, String[] tokens, String[] words) {
@@ -189,6 +249,12 @@ public final class PilotSpeech {
         }
 
         return false;
+    }
+
+    /** Nothing in the sentence is one of her ordinary requests: "make a pickaxe", not "make a shield" (hers) or "make light". */
+    private static boolean plain(String said, ServerPlayerEntity speaker, Collection<ServerPlayerEntity> online) {
+        VoltaChat.Request request = VoltaChat.parse(said, speaker, online);
+        return request == null || request.command() == HostCommand.CHAT;
     }
 
     private static boolean verb(String text, String[] tokens, HostCommand command) {
@@ -331,23 +397,50 @@ public final class PilotSpeech {
         boolean resources = has(text, tokens, RESOURCES);
         boolean crops = has(text, tokens, CROPS);
         String what = crops ? "crops" : (food ? "food" : (resources ? "resources" : (has(text, tokens, ANIMALS) ? "animals" : (has(text, tokens, HOSTILE) ? "hostile" : ""))));
+        // "Make four torches": a number of things to make is a request to make them, whatever else the words might mean.
+        boolean counted = java.util.Arrays.stream(tokens).anyMatch(token -> token.matches("\\d+") || VoltaChat.NUMBERS.containsKey(token));
         String kind;
         if (has(text, tokens, FLEE)) {
             kind = "flee";
+        } else if (has(text, tokens, RESUME) && tokens.length <= 3) {
+            kind = "resume";
         } else if (has(text, tokens, AGAIN) && tokens.length <= 3) {
             kind = "again";
         } else if (has(text, tokens, RETURN) && (body || tokens.length <= 3)) {
             kind = "return";
         } else if (has(text, tokens, SLEEP)) {
             kind = "sleep";
+        } else if (has(text, tokens, SHELTER)) {
+            kind = "shelter";
+        } else if (has(text, tokens, BRIDGE) && body) {
+            kind = "bridge";
+        } else if (has(text, tokens, STORE) || has(text, tokens, PUT) && has(text, tokens, CONTAINER)) {
+            kind = "stash";
+        } else if (has(text, tokens, WITHDRAW) && !take && body && !has(text, tokens, CRAFT)) {
+            kind = "withdraw";
+        } else if (go && has(text, tokens, STOREROOM)) {
+            kind = "goto";
+        } else if (has(text, tokens, TORCH) && has(text, tokens, PUT)) {
+            kind = "torch";
+        } else if (has(text, tokens, SMELT)) {
+            kind = "smelt";
+        } else if (has(text, tokens, CRAFT) || has(text, tokens, MAKE) && !has(text, tokens, ANY) && (body || counted || has(text, tokens, TORCH) || plain(said, speaker, online))) {
+            kind = "craft";
+        } else if (has(text, tokens, CLIMB) && !mine) {
+            kind = "pillar";
         } else if (crops && (mine || collect)) {
             kind = "mine";
         } else if (has(text, tokens, EAT) && !food) {
             kind = "eat";
         } else if (has(text, tokens, GUARD)) {
             kind = "guard";
-        } else if (has(text, tokens, KILL) || has(text, tokens, FARM) || body && strike) {
-            kind = has(text, tokens, FARM) ? "farm" : "hunt";
+        } else if (has(text, tokens, KILL) || has(text, tokens, FARM) || has(text, tokens, DEAL) || has(text, tokens, KILLER) || body && strike) {
+            kind = has(text, tokens, FARM) || has(text, tokens, KILLER) ? "farm" : "hunt";
+            if (has(text, tokens, KILLER)) {
+                what = "killer";
+            } else if (has(text, tokens, DEAL) && what.isEmpty()) {
+                what = "hostile";
+            }
         } else if (has(text, tokens, FOLLOW) && (player != null || pointed || body)) {
             kind = "follow";
         } else if (has(text, tokens, HILL) && (mine || has(text, tokens, RAZE))) {
@@ -419,12 +512,46 @@ public final class PilotSpeech {
             }
         }
 
+        if (kind.equals("stash") || kind.equals("withdraw")) {
+            // Which chest and which side are not part of the thing's name.
+            what = (has(text, tokens, LOOT) ? "loot " : "") + (has(text, tokens, LEFT) ? "left " : "") + (has(text, tokens, RIGHT) ? "right " : "")
+                + (has(text, tokens, BARREL) ? "barrel " : "") + (has(text, tokens, SHULKER) ? "shulker " : "") + (has(text, tokens, CHEST) ? "chest " : "");
+            String[][] steering = {STORE, WITHDRAW, CONTAINER, LOOT, LEFT, RIGHT, PUT, SHULKER};
+            rest.removeIf(piece -> {
+                for (String[] words : steering) {
+                    for (String word : words) {
+                        VoltaChat.guessed = false;
+                        if (word.indexOf(' ') < 0 && VoltaChat.find(piece, new String[]{piece}, word) == 0 && !VoltaChat.guessed) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            });
+        } else if ((kind.equals("find") || kind.equals("goto")) && has(text, tokens, STOREROOM)) {
+            what = "storage";
+        }
+
         String subject = String.join(" ", rest);
         double[] coords = null;
         float bearing = Float.NaN;
         if (kind.equals("goto") || kind.equals("find")) {
+            // "x 40 z 33 y 100": each number with its letter, in any order, the height or not.
+            Matcher labelled = LABELLED.matcher(said);
+            double[] by = {Double.NaN, Double.NaN, Double.NaN};
+
+            while (labelled.find()) {
+                String letter = labelled.group(1).toLowerCase(java.util.Locale.ROOT);
+                int axis = letter.equals("x") || letter.equals("х") || letter.equals("икс") ? 0 : (letter.equals("y") || letter.equals("у") || letter.equals("игрек") ? 1 : 2);
+                by[axis] = Double.parseDouble(labelled.group(2));
+            }
+
             Matcher numbers = COORDS.matcher(said);
-            if (kind.equals("goto") && numbers.find()) {
+            if (!Double.isNaN(by[0]) && !Double.isNaN(by[2])) {
+                kind = "goto";
+                coords = by;
+            } else if (kind.equals("goto") && numbers.find()) {
                 coords = numbers.group(1) != null
                     ? new double[]{Double.parseDouble(numbers.group(1)), Double.parseDouble(numbers.group(2)), Double.parseDouble(numbers.group(3))}
                     : new double[]{Double.parseDouble(numbers.group(4)), Double.NaN, Double.parseDouble(numbers.group(5))};
