@@ -26,12 +26,12 @@ public final class VoltaChat {
     public static final int FLAG_TALK = 8;
     private static final String[] NAME_STEMS = new String[]{"вольт", "volta", "wolta"};
     private static final String[] NAME_CJK = new String[]{"ヴォルタ", "ボルタ", "沃尔塔", "沃塔"};
-    private static final Map<HostCommand, String[]> VERBS = new LinkedHashMap<>();
+    static final Map<HostCommand, String[]> VERBS = new LinkedHashMap<>();
     private static final Map<String, String[]> TOPICS = new LinkedHashMap<>();
     private static final Map<Integer, String[]> FLAGS = new LinkedHashMap<>();
     public static final Map<String, String> ALIASES = new LinkedHashMap<>();
-    private static final Map<String, Integer> NUMBERS = new HashMap<>();
-    private static final Set<String> FILLER = new HashSet<>();
+    static final Map<String, Integer> NUMBERS = new HashMap<>();
+    static final Set<String> FILLER = new HashSet<>();
     private static final Set<String> GREETERS = Set.of("эй", "ей", "слушай", "слышь", "hey", "hi", "ok", "okay", "окей", "ок", "yo", "ну", "а", "oi", "ey", "he", "dis");
     public static final String[] ENEMY_WORDS = new String[]{
         "враг", "монстр", "моб", "ворог", "нечист", "enemy", "enemies", "monster", "mob", "hostile", "feind", "ennemi", "enemigo", "inimigo", "wrog", "敵", "敌", "怪"
@@ -183,7 +183,7 @@ public final class VoltaChat {
         return LATIN_OF.computeIfAbsent(keyword, word -> sound(translit(word)));
     }
 
-    private static boolean cjk(String text) {
+    static boolean cjk(String text) {
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) >= 0x2E80) {
                 return true;
@@ -198,7 +198,7 @@ public final class VoltaChat {
      * with a trailing '$' only exactly, and longer words forgive one slip of the finger.
      */
     /** Set by {@link #tokenMatches}: the last match was a guess at a misspelling, not the word itself. */
-    private static boolean guessed;
+    static boolean guessed;
 
     private static boolean tokenMatches(String token, String keyword) {
         guessed = false;
@@ -245,7 +245,7 @@ public final class VoltaChat {
     }
 
     /** Index of the first token that carries the keyword, or -1. Phrases and CJK match on the whole text. */
-    private static int find(String text, String[] tokens, String keyword) {
+    static int find(String text, String[] tokens, String keyword) {
         if (cjk(keyword)) {
             int at = text.indexOf(keyword);
             return at < 0 ? -1 : at / 2;
@@ -362,7 +362,7 @@ public final class VoltaChat {
     }
 
     /** How surely a typed word means this player name, 0 for not at all. */
-    private static int nameScore(String word, String name) {
+    static int nameScore(String word, String name) {
         String w = word.toLowerCase(Locale.ROOT);
         String n = name.toLowerCase(Locale.ROOT);
         if (w.equals(n)) {
@@ -410,7 +410,7 @@ public final class VoltaChat {
         return 0;
     }
 
-    private static boolean knownWord(String token) {
+    static boolean knownWord(String token) {
         if (FILLER.contains(token) || NUMBERS.containsKey(token)) {
             return true;
         }

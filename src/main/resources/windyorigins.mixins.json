@@ -117,6 +117,7 @@
     "MarkedVisionMixin",
     "MinecartSoundMixin",
     "MinecraftClientInvoker",
+    "PilotBreakMixin",
     "RifleZoomMixin",
     "SanguineHudMixin",
     "VoltaCameraMixin",

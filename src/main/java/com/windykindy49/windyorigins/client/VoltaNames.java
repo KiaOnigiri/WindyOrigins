@@ -39,6 +39,7 @@ public final class VoltaNames {
     private static final int LIMIT = 48;
     private static volatile List<NameMatch.Name> items;
     private static volatile List<NameMatch.Name> blocks;
+    private static volatile List<NameMatch.Name> creatures;
 
     private VoltaNames() {
     }
@@ -56,6 +57,7 @@ public final class VoltaNames {
                 // so that the first question does not have to wait for ten language files.
                 items = null;
                 blocks = null;
+                creatures = null;
                 String language = MinecraftClient.getInstance().options.language;
                 Util.getMainWorkerExecutor().execute(() -> {
                     try {
@@ -68,7 +70,7 @@ public final class VoltaNames {
         });
         ClientPlayNetworking.registerGlobalReceiver(HostNetworking.ASK, (client, handler, buf, sender) -> {
             int id = buf.readVarInt();
-            boolean block = buf.readBoolean();
+            int kind = buf.readVarInt();
             String said = buf.readString(256);
             // Off the render thread: the first question reads ten language files.
             Util.getMainWorkerExecutor().execute(() -> {
@@ -76,7 +78,7 @@ public final class VoltaNames {
                 List<String> partial = new ArrayList<>();
 
                 try {
-                    NameMatch.match(said, table(client, block), exact, partial, LIMIT);
+                    NameMatch.match(said, table(client, kind), exact, partial, LIMIT);
                 } catch (RuntimeException e) {
                     exact.clear();
                     partial.clear();
@@ -99,18 +101,16 @@ public final class VoltaNames {
         });
     }
 
-    private static List<NameMatch.Name> table(MinecraftClient client, boolean block) {
-        List<NameMatch.Name> known = block ? blocks : items;
-        if (known == null) {
+    private static List<NameMatch.Name> table(MinecraftClient client, int kind) {
+        if (items == null || blocks == null || creatures == null) {
             build(client.getResourceManager(), client.options.language);
-            known = block ? blocks : items;
         }
 
-        return known;
+        return kind == HostNetworking.NAME_CREATURE ? creatures : (kind == HostNetworking.NAME_BLOCK ? blocks : items);
     }
 
     private static synchronized void build(ResourceManager manager, String current) {
-        if (items != null && blocks != null) {
+        if (items != null && blocks != null && creatures != null) {
             return;
         }
 
@@ -137,6 +137,13 @@ public final class VoltaNames {
             add(blockNames, Registries.BLOCK.getId(one).toString(), one.getTranslationKey(), languages);
         }
 
+        List<NameMatch.Name> creatureNames = new ArrayList<>();
+
+        for (net.minecraft.entity.EntityType<?> type : Registries.ENTITY_TYPE) {
+            add(creatureNames, Registries.ENTITY_TYPE.getId(type).toString(), type.getTranslationKey(), languages);
+        }
+
+        creatures = creatureNames;
         items = itemNames;
         blocks = blockNames;
     }

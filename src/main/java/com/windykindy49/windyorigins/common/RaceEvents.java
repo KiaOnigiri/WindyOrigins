@@ -71,6 +71,7 @@ public final class RaceEvents {
                         ? TypedActionResult.fail(var0.getStackInHand(var2))
                         : TypedActionResult.pass(var0.getStackInHand(var2))
             );
+        ServerPlayNetworking.registerGlobalReceiver(HostNetworking.PILOT_STOP, (server, player, handler, buf, sender) -> server.execute(() -> com.windykindy49.windyorigins.host.Pilot.taken(player)));
         ServerPlayNetworking.registerGlobalReceiver(HostNetworking.NAMES, (server, player, handler, buf, sender) -> {
             int id = buf.readVarInt();
             java.util.List<net.minecraft.util.Identifier> exact = new java.util.ArrayList<>();

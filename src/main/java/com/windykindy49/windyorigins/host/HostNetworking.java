@@ -18,6 +18,9 @@ public final class HostNetworking {
     public static final Identifier SCANNED = new Identifier("windyorigins", "volta_scanned");
     public static final Identifier CAST = new Identifier("windyorigins", "volta_cast");
     /** Server to client: "what do these words name?" Client to server: the ids they can mean. */
+    /** Server to client: what the body does next while Volta has it. Client to server: the Host took it back. */
+    public static final Identifier PILOT = new Identifier("windyorigins", "volta_pilot");
+    public static final Identifier PILOT_STOP = new Identifier("windyorigins", "volta_pilot_stop");
     public static final Identifier ASK = new Identifier("windyorigins", "volta_ask");
     public static final Identifier NAMES = new Identifier("windyorigins", "volta_names");
     public static final int SMILE = 0;
@@ -135,10 +138,15 @@ public final class HostNetworking {
         ServerPlayNetworking.send(var0, FOUND, var4);
     }
 
-    public static void ask(ServerPlayerEntity host, int id, boolean block, String said) {
+    /** Kinds of names the Host's game can be asked for. */
+    public static final int NAME_ITEM = 0;
+    public static final int NAME_BLOCK = 1;
+    public static final int NAME_CREATURE = 2;
+
+    public static void ask(ServerPlayerEntity host, int id, int kind, String said) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeVarInt(id);
-        buf.writeBoolean(block);
+        buf.writeVarInt(kind);
         buf.writeString(said.length() > 200 ? said.substring(0, 200) : said, 256);
         ServerPlayNetworking.send(host, ASK, buf);
     }
