@@ -555,6 +555,21 @@ public final class HostManager {
             return;
         }
 
+        if (Pilot.active(var0)
+            && var1 != HostCommand.STOP
+            && var1 != HostCommand.STATUS
+            && var1 != HostCommand.HELP
+            && var1 != HostCommand.QUIET
+            && var1 != HostCommand.PVP
+            && var1 != HostCommand.CHAT) {
+            // Both hands are on the body, or the body is on somebody's strings: one thing or the other.
+            if (!Pilot.puppeted(var0)) {
+                say(var0, "pilot_busy", 2);
+            }
+
+            return;
+        }
+
         if (isHost(var0) && var0.isAlive() && !var0.isSpectator()) {
             HostManager.State var4 = state(var0);
             long var5 = var0.getWorld().getTime();
@@ -662,7 +677,7 @@ public final class HostManager {
             case SWAP:
                 LivingEntity var4 = resolveTarget(var0, var2, var3);
                 if (var4 != null
-                    && (var1 != HostCommand.PUPPET || var4 instanceof HostileEntity && MobGroups.of(var4) != MobGroups.Group.BOSS)
+                    && (var1 != HostCommand.PUPPET || var4 instanceof ServerPlayerEntity || var4 instanceof HostileEntity && MobGroups.of(var4) != MobGroups.Group.BOSS)
                     && (var1 != HostCommand.SWAP || MobGroups.of(var4) != MobGroups.Group.BOSS)) {
                     return strike(var0, var1, var4, var2) ? 0 : -1;
                 }
@@ -869,7 +884,7 @@ public final class HostManager {
             HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_SLAP, var2.getId(), var2.getEyePos(), HostNetworking.CYAN, 11);
         } else if (var1 == HostCommand.PUPPET) {
             // The strings come down first; by the time they are taut it is hers.
-            HostNetworking.fx(var0, HostNetworking.FX_STRING, 3, var2.getId(), chest(var2), HostNetworking.PINK, 300 + BOLT_TICKS);
+            HostNetworking.fx(var0, HostNetworking.FX_STRING, 3, var2.getId(), chest(var2), HostNetworking.PINK, (var2 instanceof PlayerEntity ? Pilot.PUPPET_TICKS : 300) + BOLT_TICKS);
         } else if (var1 == HostCommand.SIPHON) {
             // The drinking arm latches on straight away and starts to pull when the hold is good.
             HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_DRAIN, var2.getId(), chest(var2), HostNetworking.GREEN, SIPHON_TICKS + BOLT_TICKS);
@@ -967,6 +982,14 @@ public final class HostManager {
                     say(var0, "swap", 5);
                     break;
                 case PUPPET:
+                    if (var2 instanceof ServerPlayerEntity victim) {
+                        // A player: the same strings, on the body itself. See Pilot.puppet.
+                        Pilot.puppet(var0, victim, Pilot.PUPPET_TICKS);
+                        HostNetworking.word(var0, HostNetworking.WORD_MINE, var4x, HostNetworking.PINK);
+                        say(var0, "puppet", 1);
+                        break;
+                    }
+
                     TURNED.put(var2.getUuid(), var0.getWorld().getTime() + 300L);
                     TURNED_OWNER.put(var2.getUuid(), var0.getUuid());
                     ((MobEntity)var2).setTarget(null);
@@ -3002,6 +3025,12 @@ public final class HostManager {
 
         command(var0, var8.command(), var8, true);
         return true;
+    }
+
+    /** No prank for this long from now: she has just had the body, and gives the Host a moment with it back. */
+    public static void calm(ServerPlayerEntity host, int ticks) {
+        HostManager.State state = state(host);
+        state.nextPrank = Math.max(state.nextPrank, host.getWorld().getTime() + (long)ticks);
     }
 
     private static void tickPranks(ServerPlayerEntity var0, HostManager.State var1, long var2) {
