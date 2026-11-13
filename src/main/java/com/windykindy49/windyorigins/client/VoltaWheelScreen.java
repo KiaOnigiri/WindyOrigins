@@ -141,6 +141,8 @@ public class VoltaWheelScreen extends Screen {
                 MutableText var37 = Text.translatable("volta.windyorigins.cmd." + var19.key() + ".desc");
                 List var38 = var5.wrapLines(var37, 260);
                 short var39 = 270;
+                // Never off the bottom of the screen: on a small one a long description rides up over the wheel.
+                var35 = Math.max(2, Math.min(var35, this.height - 22 - var38.size() * 10));
                 HostClient.panel(var1, var6 - var39 / 2, var35, var6 + var39 / 2, var35 + 18 + var38.size() * 10, HostClient.pink());
                 MutableText var40 = Text.translatable("hud.windyorigins.volta.cost", var19.heat, var19.cooldown / 20);
                 var1.drawTextWithShadow(var5, var40, var6 - var5.getWidth(var40) / 2, var35 + 4, -1033016);
