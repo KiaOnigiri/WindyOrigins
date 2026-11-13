@@ -278,6 +278,8 @@ public final class RevenantManager {
                 var6.host = var3.getUuid();
                 var6.previous = var0.interactionManager.getGameMode();
                 var6.ticksLeft = POSSESS_TICKS;
+                var6.phase = PhaseFx.phase(var3);
+                var6.phaseKnown = true;
                 var1.possessions.put(var0.getUuid(), var6);
                 var1.markDirty();
                 swirl(var0, var0.getPos(), var3.getPos());
@@ -346,6 +348,15 @@ public final class RevenantManager {
     private static boolean tickPossession(ServerPlayerEntity var0, RevenantState.Possession var1, RevenantState var2) {
         Entity var3 = var1.host == null ? null : findHost(var0.getServer(), var1.host);
         if (var3 instanceof LivingEntity var4 && var4.isAlive() && var0.getCameraEntity() == var4 && var0.isSpectator()) {
+            if (!var1.phaseKnown) {
+                var1.phase = PhaseFx.phase(var4);
+                var1.phaseKnown = true;
+            } else if (PhaseFx.phase(var4) != var1.phase) {
+                // The host has gone to the other side of the mirror: the Revenant does not go with it, and is out, as if it had let go.
+                endPossession(var0, var1, var2, var4);
+                return true;
+            }
+
             var1.ticksLeft--;
             var1.spent++;
             if (var1.ticksLeft == 60 && var1.spent + var1.ticksLeft + POSSESS_EXTEND <= POSSESS_MAX && Powers.resource(var0, "echo", 0) > 0) {

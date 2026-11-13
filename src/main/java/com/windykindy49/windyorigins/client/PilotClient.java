@@ -40,7 +40,20 @@ public final class PilotClient {
     public static final int CLICK = 32;
     public static final int SWEEP = 64;
     public static final int MOUNT = 128;
+    /** A long straight run: she jumps as she sprints, the way a player in a hurry does. */
+    public static final int HOP = 256;
+    public static final int BACK = 512;
+    public static final int LEAP = 1024;
+    public static final int FLY = 2048;
+    public static final int DUEL = 4096;
+    private static int wtap;
+    private static int strafe = 1;
+    private static int strafeFor;
+    private static int backWait;
     private static int mountWait;
+    private static boolean flown;
+    private static int grounded;
+    private static int falling;
     /** The label that says this body is on another Host's strings, not at its own Volta's hands. */
     public static final int PUPPET = 18;
     private static boolean puppet;
@@ -262,6 +275,10 @@ public final class PilotClient {
             input.pressingRight = false;
             input.jumping = false;
             input.sneaking = sneak;
+            if (go == null && !sneak) {
+                input.pressingBack = boat.getVelocity().horizontalLength() > 0.06;
+            }
+
             if (go != null && !sneak) {
                 float want = (float)(MathHelper.atan2(go.z - boat.getZ(), go.x - boat.getX()) * 180.0 / Math.PI) - 90.0F;
                 float off = MathHelper.wrapDegrees(want - boat.getYaw());
@@ -272,6 +289,26 @@ public final class PilotClient {
 
             input.movementForward = input.pressingForward ? 1.0F : 0.0F;
             input.movementSideways = input.pressingLeft ? 1.0F : (input.pressingRight ? -1.0F : 0.0F);
+            return;
+        }
+
+        if (!puppet && rider != null && rider.getVehicle() instanceof net.minecraft.entity.vehicle.AbstractMinecartEntity) {
+            // In a cart there is one key: forward, along the rails, the way she is looking.
+            boolean ownKeys = input.pressingForward || input.pressingBack || input.pressingLeft || input.pressingRight || input.jumping || input.sneaking;
+            if (armed && ownKeys) {
+                takeBack(MinecraftClient.getInstance());
+                return;
+            }
+
+            armed |= !ownKeys;
+            input.pressingForward = !sneak && !PATH.isEmpty();
+            input.pressingBack = false;
+            input.pressingLeft = false;
+            input.pressingRight = false;
+            input.jumping = false;
+            input.sneaking = sneak;
+            input.movementForward = input.pressingForward ? 1.0F : 0.0F;
+            input.movementSideways = 0.0F;
             return;
         }
 
@@ -464,7 +501,88 @@ public final class PilotClient {
             jump = true;
         }
 
+        if ((flags & LEAP) != 0 && go != null && player.isOnGround() && forward > 0.0F) {
+            // Off the last of the floor: the foot leaves it and she is in the air.
+            double gx = go.x - player.getX();
+            double gz = go.z - player.getZ();
+            double len = Math.sqrt(gx * gx + gz * gz);
+            if (len > 0.8) {
+                BlockPos under = BlockPos.ofFloored(player.getX() + gx / len * 0.42, player.getY() - 0.5, player.getZ() + gz / len * 0.42);
+                if (client.world.getBlockState(under).getCollisionShape(client.world, under).isEmpty()) {
+                    jump = true;
+                }
+            }
+        }
+
+        if ((flags & DUEL) != 0 && target != null && go == null) {
+            // A duel: round the other in a circle, changing hands now and then, and never standing where the last blow came from.
+            double near = (double)player.distanceTo(target);
+            if (--strafeFor <= 0) {
+                strafe = player.getRandom().nextBoolean() ? 1 : -1;
+                strafeFor = 10 + player.getRandom().nextInt(18);
+            }
+
+            if (near < 4.5) {
+                sideways = (float)strafe;
+            }
+
+            if (wtap > 0) {
+                // The sprint let go for a moment after a blow: the next one throws them back again.
+                wtap--;
+                forward = 0.0F;
+                player.setSprinting(false);
+            } else if (near > 2.3) {
+                forward = 1.0F;
+            }
+        } else {
+            wtap = 0;
+        }
+
+        if ((flags & FLY) != 0 && player.isFallFlying() && player.isOnGround()) {
+            // Wings open with the feet on the ground: this side thought she was up and the server did not. Fold them and go again.
+            if (++grounded > 3) {
+                player.stopFallFlying();
+                grounded = 0;
+            }
+        } else {
+            grounded = 0;
+        }
+
+        if ((flags & FLY) != 0 && !player.isFallFlying()) {
+            // Up off the ground; then, on the way down, the jump key once more, which is what opens the wings.
+            // The press comes at the very top of the jump, with all of the fall still to open them in.
+            if (player.isOnGround()) {
+                jump = true;
+                falling = 0;
+            } else if (player.getVelocity().y < 0.0) {
+                jump = falling++ % 6 < 3;
+            } else {
+                jump = false;
+                falling = 0;
+            }
+        } else if (player.isFallFlying()) {
+            jump = false;
+            forward = 0.0F;
+            sideways = 0.0F;
+            if ((flags & FLY) != 0 && !flown && player.getMainHandStack().isOf(net.minecraft.item.Items.FIREWORK_ROCKET) && client.interactionManager != null) {
+                // The wings are open a hand's breadth over the ground: the rocket goes now or not at all.
+                flown = true;
+                client.interactionManager.interactItem(player, Hand.MAIN_HAND);
+                player.swingHand(Hand.MAIN_HAND);
+                clickWait = 10;
+                useFlash = 4;
+            }
+        }
+
+        if (!player.isFallFlying()) {
+            flown = false;
+        }
+
         boolean run = (flags & SPRINT) != 0 && forward > 0.0F && !player.isUsingItem() && player.getHungerManager().getFoodLevel() > 6;
+        if (run && (flags & HOP) != 0 && player.isOnGround() && player.isSprinting() && sideways == 0.0F && !player.isTouchingWater() && !player.hasVehicle()) {
+            jump = true;
+        }
+
         if (run != player.isSprinting() && (run || player.isSprinting())) {
             player.setSprinting(run);
         }
@@ -548,13 +666,22 @@ public final class PilotClient {
             clickWait = 8;
         }
 
+        if ((flags & BACK) == 0) {
+            backWait = 0;
+        }
+
         if (placeWait > 0) {
             placeWait--;
         } else if (placeAgainst != null && target == null && facing && client.interactionManager != null) {
             // A click of the use button on the face she was shown, with what she put in the hand.
             Vec3d on = Vec3d.ofCenter(placeAgainst).add((double)placeFace.getOffsetX() * 0.5, (double)placeFace.getOffsetY() * 0.5, (double)placeFace.getOffsetZ() * 0.5);
-            if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && player.getMainHandStack().getItem() instanceof net.minecraft.item.BlockItem) {
-                client.interactionManager.interactBlock(player, Hand.MAIN_HAND, new BlockHitResult(on, placeFace, placeAgainst, false));
+            boolean seen = client.crosshairTarget instanceof BlockHitResult aimed && aimed.getType() == HitResult.Type.BLOCK && aimed.getBlockPos().equals(placeAgainst) && aimed.getSide() == placeFace;
+            if ((flags & BACK) != 0 && !seen && ++backWait < 50) {
+                // Out over the edge the face is not in sight yet: no click on what the eye cannot see.
+                placeWait = 0;
+            } else if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && (player.getMainHandStack().getItem() instanceof net.minecraft.item.BlockItem || player.getMainHandStack().isOf(net.minecraft.item.Items.END_CRYSTAL))) {
+                backWait = 0;
+                client.interactionManager.interactBlock(player, Hand.MAIN_HAND, seen ? (BlockHitResult)client.crosshairTarget : new BlockHitResult(on, placeFace, placeAgainst, false));
                 player.swingHand(Hand.MAIN_HAND);
                 placeWait = 4;
                 useFlash = 4;
@@ -600,8 +727,18 @@ public final class PilotClient {
             player.swingHand(Hand.MAIN_HAND);
             critWait = 0;
             hitFlash = 4;
-            VoltaFx.pilotHit(target.getPos().add(0.0, (double)target.getHeight() * 0.6, 0.0), falling);
-            swingWait = 2 + player.getRandom().nextInt(4);
+            if ((flags & DUEL) != 0) {
+                wtap = 2;
+            }
+
+            if (target instanceof net.minecraft.entity.LivingEntity) {
+                VoltaFx.pilotHit(target.getPos().add(0.0, (double)target.getHeight() * 0.6, 0.0), falling);
+            } else {
+                // A boat, a crystal: a thing broken, not a creature struck.
+                VoltaFx.pilotBroke(target.getPos().add(0.0, (double)target.getHeight() * 0.5, 0.0));
+            }
+            // A creature is struck in an uneven rhythm; a cart or a boat is hammered, or it shakes the blows off between them.
+            swingWait = target instanceof net.minecraft.entity.LivingEntity ? 2 + player.getRandom().nextInt(4) : 0;
             offX = (player.getRandom().nextDouble() - 0.5) * (double)target.getWidth() * 0.5;
             offY = (player.getRandom().nextDouble() - 0.5) * 0.3;
         }

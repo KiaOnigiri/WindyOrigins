@@ -101,5 +101,8 @@ public class RevenantState extends PersistentState {
         public GameMode previous;
         public int ticksLeft;
         public int spent;
+        /** Which side of the mirror the host was on when it was taken; a host that crosses over shakes the Revenant off. */
+        public boolean phase;
+        public boolean phaseKnown;
     }
 }

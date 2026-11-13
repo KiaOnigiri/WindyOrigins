@@ -41,8 +41,13 @@ public final class PilotSpeech {
         "возьми тело", "возьми управление", "возьми контроль", "возьми руль", "бери тело", "бери управление", "бери контроль", "бери руль", "управляй", "веди$",
         "веди тело", "веди меня", "рули$", "порули", "автопилот", "вселись", "вселяйся", "візьми тіло", "візьми керування", "керуй", "take over", "take control",
         "take the wheel", "take my body", "take the body", "autopilot", "auto pilot", "drive$", "you drive", "pilot$", "ubernimm", "ubernehmen", "steuere",
+        "nimm den korper", "nimm meinen korper",
         "toma el control", "toma el cuerpo", "piloto automatico", "conduce$", "prends le controle", "prends le corps", "pilote automatique", "pilote$", "przejmij",
-        "steruj", "assuma", "assume o controle", "操縦", "オートパイロット", "体を使って", "接管", "自动驾驶", "控制身体"
+        "steruj", "assuma", "assume o controle", "操縦", "オートパイロット", "体を使って", "接管", "自动驾驶", "控制身体",
+        "меня под контроль", "меня под свой контроль", "меня под управление", "тело под контроль", "под контроль тело", "под контроль меня", "возьми меня",
+        "контролируй меня", "контролируй тело", "захвати тело", "завладей телом", "управляй мной", "мене під контроль", "тіло під контроль", "контролюй мене",
+        "take me over", "control me", "control my body", "take control of me", "possess me", "kontrolliere mich", "ubernimm mich", "controlame", "controla mi cuerpo",
+        "controle moi", "prends moi", "kontroluj mnie", "przejmij kontrole", "me controle", "体を操って", "乗っ取って", "控制我", "接管身体"
     };
     private static final String[] RELEASE = {
         "верни тело", "верни управление", "верни контроль", "верни руль", "отдай тело", "отдай управление", "отдай руль", "отпусти", "я сам$", "я сама$",
@@ -147,7 +152,7 @@ public final class PilotSpeech {
     };
     private static final String[] TORCH = {"факел", "смолоскип", "torch", "fackel", "antorcha", "torche", "pochodni", "tocha", "松明", "火把"};
     private static final String[] PUT = {
-        "поставь", "установи", "воткни", "постав$", "place$", "put$", "stell$", "stelle$", "setz", "pon$", "coloca", "pose$", "postaw", "coloque", "置いて", "放", "插"
+        "поставь", "установи", "воткни", "постав$", "place$", "put$", "stell$", "stelle$", "setz", "lege$", "leg$", "pon$", "coloca", "pose$", "mets$", "postaw", "coloque", "置いて", "放", "插"
     };
     private static final String[] SHELTER = {
         "укрыти", "спрячься", "закопайся", "убежищ", "схованк", "сховайся", "shelter", "hide$", "bunker", "dig in", "unterschlupf", "versteck", "refugio",
@@ -319,6 +324,11 @@ public final class PilotSpeech {
             }
         }
 
+        // "Take the body and go there": the taking is leave for the job, and with the job done the body goes back.
+        if (out.size() > 1) {
+            out.removeIf(order -> order.kind().equals("take"));
+        }
+
         return out.isEmpty() ? null : out;
     }
 
@@ -386,7 +396,14 @@ public final class PilotSpeech {
         boolean go = goAt >= 0;
         boolean self = has(text, tokens, SELF);
         boolean take = has(text, tokens, TAKE);
-        boolean body = held || go || self || take;
+        // The body is hers only when it is asked for by name, here or in the message before: "take the body and...",
+        // or with the body already in her hands. Without that the same words are for her ordinary abilities. The one
+        // thing that needs no asking twice is going on with a job she was given the body for and had to break off.
+        boolean body = held || take || has(text, tokens, RESUME) && tokens.length <= 3 && Pilot.paused(speaker);
+        if (!body) {
+            return null;
+        }
+
         boolean strike = verb(text, tokens, HostCommand.OVERLOAD);
         boolean mine = verb(text, tokens, HostCommand.DIG) || verb(text, tokens, HostCommand.HARVEST);
         boolean find = verb(text, tokens, HostCommand.FIND);
@@ -414,7 +431,7 @@ public final class PilotSpeech {
             kind = "shelter";
         } else if (has(text, tokens, BRIDGE) && body) {
             kind = "bridge";
-        } else if (has(text, tokens, STORE) || has(text, tokens, PUT) && has(text, tokens, CONTAINER)) {
+        } else if (has(text, tokens, STORE) || has(text, tokens, PUT) && (has(text, tokens, CONTAINER) || has(text, tokens, LOOT))) {
             kind = "stash";
         } else if (has(text, tokens, WITHDRAW) && !take && body && !has(text, tokens, CRAFT)) {
             kind = "withdraw";
@@ -531,6 +548,20 @@ public final class PilotSpeech {
             });
         } else if ((kind.equals("find") || kind.equals("goto")) && has(text, tokens, STOREROOM)) {
             what = "storage";
+        }
+
+        if (take) {
+            // "Take the body" and the like are how it was asked, not what was asked for.
+            for (String phrase : TAKE) {
+                VoltaChat.guessed = false;
+                if (phrase.indexOf(' ') > 0 && VoltaChat.find(text, tokens, phrase) >= 0 && !VoltaChat.guessed) {
+                    for (String word : phrase.split(" ")) {
+                        rest.remove(word);
+                    }
+                }
+            }
+
+            rest.removeIf(piece -> java.util.Set.of("меня", "мной", "мене", "me", "my", "mich", "возьми", "бери", "візьми", "take", "nimm", "toma", "prends", "wez", "pegue").contains(piece));
         }
 
         String subject = String.join(" ", rest);

@@ -13,7 +13,7 @@ An **Origins** add-on for Minecraft with nine origins. It runs on **1.19.4, 1.20
 | **Folded** | Born in a pocket of space. Hovers, and carries a hitscan rifle that pierces armour. |
 | **Sanguine** | A vampire. Blood is its hunger bar, and every kind of blood grants a different trait. |
 | **Revenant** | A soul that will not leave. Possesses creatures, sends wisps on errands, takes ten seconds of vengeance after death. |
-| **Host** | Has a chip in the temple and Volta in the chip: a companion who fights, scouts and works on request, overheats, plays pranks and can break. Asked to, she takes the Host's body and walks, mines, hunts and searches with it: "Volta, go find diamonds". |
+| **Host** | Has a chip in the temple and Volta in the chip: a companion who fights, scouts and works on request, overheats, plays pranks and can break. Asked to, she takes the Host's body and walks, mines, crafts, hunts, fights and travels with it: "Volta, take the body and go find diamonds". |
 | **Dreamwalker** | Puts creatures to sleep and walks into their dreams. |
 
 Every power is described in game on the origin selection screen, in ten languages: English,
