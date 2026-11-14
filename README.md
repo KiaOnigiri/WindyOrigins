@@ -60,13 +60,17 @@ and your weapons, at a player's pace, pressing the same keys a player has. No x-
 teleporting: ore is looked for down a staircase, places on foot.
 
 - **Mines, chops, farms and crafts**: works out recipes of any mod, makes the parts first, goes
-  round the chests for what is missing, smelts.
+  round the chests for what is missing, smelts. Sows the bare beds, tills a trodden one again,
+  cuts crops with whatever has the most Fortune on it.
 - **Gets about like a player in a hurry**: sprint-jumps, parkours over gaps, bridges forwards
   and backwards, rows a boat (on ice too), rides your horse, takes rails in a minecart, flies
   your elytra on your rockets.
 - **Fights**: picks the weapon, shoots a bow, raises the shield, eats and backs off when hurt.
   Against players she reads the other's attack bar, blocks and answers, takes an axe to a
-  shield, throws pearls and potions.
+  shield, throws pearls and potions, sets cobwebs. One who climbs out of reach or walls himself
+  in gets an arrow, or has the block broken from under him.
+- **Several things in one breath**: "harvest the crops and put them in the chest", "kill Steve,
+  then set the respawn point".
 - **The chip cooks in about 45 seconds of work.** She lets go just before it does and remembers
   the job; "carry on" picks it up again. Any movement key takes the body back at once.
 
