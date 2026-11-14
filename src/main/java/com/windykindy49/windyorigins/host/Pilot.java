@@ -1217,7 +1217,7 @@ public final class Pilot {
                 // The wings go on over the shoulders; what was worn there waits in the pack.
                 for (int i = 0; i < inventory.main.size(); i++) {
                     ItemStack stack = inventory.main.get(i);
-                    if (stack.isOf(Items.ELYTRA) && net.minecraft.item.ElytraItem.isUsable(stack)) {
+                    if (stack.isOf(Items.ELYTRA) && net.minecraft.item.ElytraItem.isUsable(stack) && wearable(host, stack, EquipmentSlot.CHEST)) {
                         ItemStack worn = host.getEquippedStack(EquipmentSlot.CHEST);
                         host.equipStack(EquipmentSlot.CHEST, stack);
                         inventory.main.set(i, worn);
@@ -2235,10 +2235,40 @@ public final class Pilot {
         return host.getOffHandStack().getItem() instanceof net.minecraft.item.ShieldItem;
     }
 
+    /**
+     * Whether the body may wear this there. What the origin forbids the player it forbids her as well: the Host's
+     * chip sits where a helmet would go, and the armour slot in the inventory will not take one.
+     */
+    private static boolean wearable(ServerPlayerEntity host, ItemStack stack, EquipmentSlot slot) {
+        for (io.github.apace100.apoli.power.RestrictArmorPower power : io.github.apace100.apoli.component.PowerHolderComponent.getPowers(host, io.github.apace100.apoli.power.RestrictArmorPower.class)) {
+            if (!power.canEquip(stack, slot)) {
+                return false;
+            }
+        }
+
+        for (io.github.apace100.apoli.power.ConditionedRestrictArmorPower power : io.github.apace100.apoli.component.PowerHolderComponent.getPowers(host, io.github.apace100.apoli.power.ConditionedRestrictArmorPower.class)) {
+            if (!power.canEquip(stack, slot)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** What a player would have put on before a fight: a shield from the pockets into the off hand, armour onto whatever is bare. */
     private static void gear(ServerPlayerEntity host) {
         PlayerInventory inventory = host.getInventory();
         boolean changed = false;
+
+        // Anything on the body that it may not wear comes off again: an earlier version of her put helmets on the Host.
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            ItemStack worn = host.getEquippedStack(slot);
+            if (!worn.isEmpty() && worn.getItem() instanceof net.minecraft.item.ArmorItem && !wearable(host, worn, slot)) {
+                host.equipStack(slot, ItemStack.EMPTY);
+                inventory.offerOrDrop(worn);
+                changed = true;
+            }
+        }
 
         for (int i = 0; i < inventory.main.size(); i++) {
             ItemStack stack = inventory.main.get(i);
@@ -2250,7 +2280,7 @@ public final class Pilot {
                 inventory.offHand.set(0, stack);
                 inventory.main.set(i, ItemStack.EMPTY);
                 changed = true;
-            } else if (stack.getItem() instanceof net.minecraft.item.ArmorItem armor && host.getEquippedStack(armor.getSlotType()).isEmpty()) {
+            } else if (stack.getItem() instanceof net.minecraft.item.ArmorItem armor && host.getEquippedStack(armor.getSlotType()).isEmpty() && wearable(host, stack, armor.getSlotType())) {
                 host.equipStack(armor.getSlotType(), stack);
                 inventory.main.set(i, ItemStack.EMPTY);
                 changed = true;
