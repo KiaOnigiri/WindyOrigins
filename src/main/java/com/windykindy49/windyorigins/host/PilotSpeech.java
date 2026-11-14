@@ -97,7 +97,7 @@ public final class PilotSpeech {
     };
     /** Putting things away, and where: chests by hand. */
     private static final String[] STORE = {
-        "сложи", "положи", "закинь", "скинь", "выложи", "спрячь$", "склади", "поклади", "store$", "stash", "deposit", "unload", "lagere", "verstau", "guarda$",
+        "сложи", "положи", "закинь", "скинь", "выложи", "спрячь$", "склади", "поклади", "store$", "stash", "deposit", "unload", "stow", "put away", "put it away", "put them away", "put that away", "lagere", "verstau", "guarda$",
         "deposita", "range$", "depose$", "schowaj", "odloz", "guarde$", "しまって", "入れて", "存放", "放进"
     };
     private static final String[] WITHDRAW = {
@@ -129,6 +129,19 @@ public final class PilotSpeech {
     private static final String[] CROPS = {
         "урожай", "посев", "грядк", "врожай", "crops", "the harvest", "the field", "ernte", "feld$", "cosecha", "cultivos", "recolte", "cultures", "plony",
         "zbiory", "colheita", "plantacao", "作物", "収穫", "庄稼", "农作物"
+    };
+    /** Seeds into the bare beds. */
+    private static final String[] SOW = {
+        "посади", "посей", "посеять", "засей", "засади", "высади", "сажай", "посадить", "посій", "засій", "посади$", "засади$", "plant$", "plant the", "sow$", "sow the",
+        "replant", "pflanze", "pflanz$", "sae$", "saee$", "bepflanze", "siembra", "planta$", "plante$", "seme$", "zasadz", "posiej", "zasiej", "obsiej", "plante$", "semeie",
+        "植えて", "まいて", "種をまい", "种植", "种下", "播种", "种上"
+    };
+    /** The respawn point, to be set at a bed. "Spawn" by itself is a place to go to, and is not in here. */
+    private static final String[] RESPAWN = {
+        "респавн", "респаун", "точку возрождения", "точка возрождения", "точку спавна", "точку респавна", "спавнпоинт", "точку відродження",
+        "точка відродження", "respawn", "spawn point", "spawnpoint", "set spawn", "set my spawn", "set the spawn", "respawnpunkt", "spawnpunkt", "wiedereinstiegspunkt",
+        "punto de reaparicion", "punto de aparicion", "point de reapparition", "point de respawn", "punkt odrodzenia", "ponto de renascimento", "ponto de respawn",
+        "リスポーン", "スポーン地点", "重生点", "出生点"
     };
     private static final String[] RETURN = {
         "вернись", "возвращайся", "вернуться", "обратно", "повертайся", "назад$", "come back", "return", "go back", "get back", "komm zuruck", "kehr zuruck",
@@ -214,7 +227,7 @@ public final class PilotSpeech {
         "zur$", "und$", "nach$", "bitte", "para$", "mi$", "por$", "favor$", "y$", "el$", "la$", "los$", "las$", "un$", "una$", "al$", "pour$", "moi$", "et$", "le$",
         "les$", "des$", "du$", "au$", "dla$", "mnie$", "i$", "do$", "prosze", "mim$", "e$", "o$", "os$", "as$", "um$", "uma$", "ao$", "を", "に", "へ", "の", "的", "给我"
     };
-    private static final String[][] CONTROL = {GO, SELF, TAKE, RELEASE, KILL, FARM, GUARD, FLEE, HOME, EAT, SLEEP, AGAIN, RESUME, DEAL, KILLER, RETURN, CRAFT, MAKE, SMELT, BRIDGE, CLIMB, PUT, SHELTER, FOLLOW, EXPLORE, RAZE, THAT, THERE, FORWARD, NORTH, SOUTH, EAST, WEST, LITTLE};
+    private static final String[][] CONTROL = {RESPAWN, SOW, GO, SELF, TAKE, RELEASE, KILL, FARM, GUARD, FLEE, HOME, EAT, SLEEP, AGAIN, RESUME, DEAL, KILLER, RETURN, CRAFT, MAKE, SMELT, BRIDGE, CLIMB, PUT, SHELTER, FOLLOW, EXPLORE, RAZE, THAT, THERE, FORWARD, NORTH, SOUTH, EAST, WEST, LITTLE};
     private static final Pattern COORDS = Pattern.compile("(-?\\d{1,7})[\\s,;]+(-?\\d{1,4})[\\s,;]+(-?\\d{1,7})|(-?\\d{1,7})[\\s,;]+(-?\\d{1,7})");
 
     private static boolean has(String text, String[] tokens, String[] words) {
@@ -268,7 +281,7 @@ public final class PilotSpeech {
     }
 
     private static final Pattern THEN = Pattern.compile(
-        "(?iu)[\\s,;.]+(?:а\\s+|и\\s+|and\\s+|und\\s+|y\\s+|et\\s+|i\\s+|e\\s+)?(?:потом|затем|после\\s+этого|после\\s+чего|тоді|потім|then|afterwards|after\\s+that|danach|dann|luego|despu[eé]s|puis|ensuite|potem|nast[eę]pnie|depois|em\\s+seguida)[\\s,]+|(?:それから|その後|そして|然后|接着|之后|再)"
+        "(?iu)[\\s,;.]+(?:а\\s+|и\\s+|and\\s+|und\\s+|y\\s+|et\\s+|i\\s+|e\\s+)?(?:потом|затем|после\\s+этого|после\\s+чего|после\\s+того|после|опосля|тоді|потім|після\\s+цього|після\\s+того|після|then|afterwards|after\\s+that|after\\s+this|danach|dann|anschlie(?:ß|ss)end|nachher|luego|despu[eé]s|a\\s+continuaci[oó]n|puis|ensuite|apr[eè]s\\s+[cç]a|potem|nast[eę]pnie|p[oó][zź]niej|po\\s+czym|depois|em\\s+seguida|ap[oó]s\\s+isso|logo\\s+depois)[\\s,]+|(?:それから|その後|そして|然后|接着|之后|再)"
     );
     private static final Pattern AND = Pattern.compile("(?iu)\\s+(?:и|і|та|and|und|y|et|i|e)\\s+|[,;]\\s+");
 
@@ -425,6 +438,8 @@ public final class PilotSpeech {
             kind = "again";
         } else if (has(text, tokens, RETURN) && (body || tokens.length <= 3)) {
             kind = "return";
+        } else if (has(text, tokens, RESPAWN)) {
+            kind = "spawn";
         } else if (has(text, tokens, SLEEP)) {
             kind = "sleep";
         } else if (has(text, tokens, SHELTER)) {
@@ -445,6 +460,8 @@ public final class PilotSpeech {
             kind = "craft";
         } else if (has(text, tokens, CLIMB) && !mine) {
             kind = "pillar";
+        } else if (has(text, tokens, SOW)) {
+            kind = "sow";
         } else if (crops && (mine || collect)) {
             kind = "mine";
         } else if (has(text, tokens, EAT) && !food) {
