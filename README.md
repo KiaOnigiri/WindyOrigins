@@ -1,5 +1,7 @@
 # Windy Origins
 
+![The nine origins](docs/images/nine-origins.jpg)
+
 An **Origins** add-on for Minecraft with nine origins. It runs on **1.19.4, 1.20.1, 1.20.2 and
 1.20.4**, on Fabric and Quilt, and on **Forge and NeoForge** for 1.20.1. It began as
 *Mirrored Origin*, a mod with a single origin; the Mirrored is still here, joined by eight more.
@@ -19,6 +21,58 @@ An **Origins** add-on for Minecraft with nine origins. It runs on **1.19.4, 1.20
 Every power is described in game on the origin selection screen, in ten languages: English,
 Russian, Ukrainian, German, Spanish, French, Polish, Brazilian Portuguese, Japanese and
 Simplified Chinese.
+
+![The nine origins on the Origins screen](docs/images/origin-cards.jpg)
+
+Downloads are on the [releases page](https://github.com/KiaOnigiri/WindyOrigins/releases).
+
+## A few of them
+
+| | |
+|---|---|
+| ![The Mirrored](docs/images/mirrored.jpg) | ![Frostborn](docs/images/frostborn.jpg) |
+| **The Mirrored.** The same spot in the world and in its empty reflection. | **Frostborn.** Water hardens underfoot, wider the colder you are. |
+| ![The Folded](docs/images/folded.jpg) | ![Dreamwalker](docs/images/dreamwalker.jpg) |
+| **The Folded.** The Fold Rifle through its scope: a hitscan shot, no travel time and no drop. | **Dreamwalker.** Inside a villager's dream: a floating island of its world, reveries to steal and a nightmare guarding them. |
+
+## The Host and Volta
+
+Volta lives in the chip in the Host's temple: a hologram everyone can see, quick, clever and
+easily bored.
+
+![The Host and Volta](docs/images/host-volta.jpg)
+
+- **Thirty commands on a wheel**, or just talk to her in chat: "Volta, shock that zombie",
+  "Volta, build a bridge", "Volta, bring me 64 stone from the chest". She understands ten
+  languages.
+- **Every request heats the chip.** An overheated chip takes the Host's mind with it, and a hard
+  blow can crack the chip outright.
+- **She has a will of her own**: leave her idle and she plays pranks.
+
+| | |
+|---|---|
+| ![The command wheel](docs/images/volta-wheel.jpg) | ![Scan](docs/images/volta-scan.jpg) |
+
+### Autopilot: she takes the body
+
+Say **"Volta, take the body and go find diamonds"** and she does it with your hands, your tools
+and your weapons, at a player's pace, pressing the same keys a player has. No x-ray and no
+teleporting: ore is looked for down a staircase, places on foot.
+
+- **Mines, chops, farms and crafts**: works out recipes of any mod, makes the parts first, goes
+  round the chests for what is missing, smelts.
+- **Gets about like a player in a hurry**: sprint-jumps, parkours over gaps, bridges forwards
+  and backwards, rows a boat (on ice too), rides your horse, takes rails in a minecart, flies
+  your elytra on your rockets.
+- **Fights**: picks the weapon, shoots a bow, raises the shield, eats and backs off when hurt.
+  Against players she reads the other's attack bar, blocks and answers, takes an axe to a
+  shield, throws pearls and potions.
+- **The chip cooks in about 45 seconds of work.** She lets go just before it does and remembers
+  the job; "carry on" picks it up again. Any movement key takes the body back at once.
+
+| | |
+|---|---|
+| ![She takes the body](docs/images/autopilot.jpg) | ![A bridge over the lava sea](docs/images/autopilot-nether.jpg) |
 
 ## Which file do I need
 
@@ -86,3 +140,7 @@ names. The original, hand-written sources of the first Mirrored Origin release a
 repository's history, and its README is preserved as
 [`docs/MIRRORED_ORIGIN_1.0.md`](docs/MIRRORED_ORIGIN_1.0.md), which still explains how the two
 phases of the world work.
+
+## License
+
+[MIT](LICENSE).
