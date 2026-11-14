@@ -341,7 +341,7 @@ public final class BountyManager {
         var2.lastDistance = var3;
         if (!(var5 < 0.0) && hasPower(var0, "pursuit") && var2.phaseTicks <= 0) {
             if (var5 - var3 >= 0.25) {
-                var0.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 30, 1, true, false, true));
+                var0.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 30, 0, true, false, true));
             }
         }
     }

@@ -46,6 +46,11 @@ public final class PilotClient {
     public static final int LEAP = 1024;
     public static final int FLY = 2048;
     public static final int DUEL = 4096;
+    public static final int OFFHAND = 32768;
+    /** In a duel: straight at him, no circling. */
+    public static final int PRESS = 8192;
+    /** In a duel: backwards out of his reach, eyes still on him. */
+    public static final int KITE = 16384;
     private static int wtap;
     private static int strafe = 1;
     private static int strafeFor;
@@ -522,7 +527,7 @@ public final class PilotClient {
                 strafeFor = 10 + player.getRandom().nextInt(18);
             }
 
-            if (near < 4.5) {
+            if (near < 4.5 && (flags & PRESS) == 0) {
                 sideways = (float)strafe;
             }
 
@@ -531,7 +536,10 @@ public final class PilotClient {
                 wtap--;
                 forward = 0.0F;
                 player.setSprinting(false);
-            } else if (near > 2.3) {
+            } else if ((flags & KITE) != 0) {
+                forward = -1.0F;
+            } else if (near > ((flags & PRESS) != 0 ? 1.3 : 2.3)) {
+                // Pressing, she is still moving in when the blow lands: it is the run that throws him back.
                 forward = 1.0F;
             }
         } else {
@@ -679,11 +687,19 @@ public final class PilotClient {
             if ((flags & BACK) != 0 && !seen && ++backWait < 50) {
                 // Out over the edge the face is not in sight yet: no click on what the eye cannot see.
                 placeWait = 0;
-            } else if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && (player.getMainHandStack().getItem() instanceof net.minecraft.item.BlockItem || player.getMainHandStack().isOf(net.minecraft.item.Items.END_CRYSTAL))) {
+            } else if ((flags & OFFHAND) != 0) {
+                // Out of the off hand, with the weapon still in the other.
+                if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && player.getOffHandStack().getItem() instanceof net.minecraft.item.BlockItem) {
+                    client.interactionManager.interactBlock(player, Hand.OFF_HAND, new BlockHitResult(on, placeFace, placeAgainst, false));
+                    player.swingHand(Hand.OFF_HAND);
+                    placeWait = 3;
+                    useFlash = 4;
+                }
+            } else if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && (player.getMainHandStack().getItem() instanceof net.minecraft.item.BlockItem || player.getMainHandStack().getItem() instanceof net.minecraft.item.HoeItem || player.getMainHandStack().isOf(net.minecraft.item.Items.END_CRYSTAL))) {
                 backWait = 0;
                 client.interactionManager.interactBlock(player, Hand.MAIN_HAND, seen ? (BlockHitResult)client.crosshairTarget : new BlockHitResult(on, placeFace, placeAgainst, false));
                 player.swingHand(Hand.MAIN_HAND);
-                placeWait = 4;
+                placeWait = player.getMainHandStack().isOf(net.minecraft.item.Items.END_CRYSTAL) ? 1 : 4;
                 useFlash = 4;
             }
         }
@@ -702,20 +718,37 @@ public final class PilotClient {
     }
 
     /**
+     * Is the crosshair on it, this tick? The game works that out once a picture, which on a slow machine is several
+     * ticks old; this is the same sum done now: along the eyes, no further than the arm reaches, nothing in the way.
+     */
+    private static boolean aimed(ClientPlayerEntity player, Entity target) {
+        Vec3d eye = player.getCameraPosVec(1.0F);
+        Vec3d look = player.getRotationVec(1.0F);
+        HitResult wall = player.raycast(4.5, 1.0F, false);
+        double limit = wall.getType() != HitResult.Type.MISS ? wall.getPos().squaredDistanceTo(eye) : 4.5 * 4.5;
+        Vec3d end = eye.add(look.multiply(4.5));
+        EntityHitResult found = net.minecraft.entity.projectile.ProjectileUtil.raycast(player, eye, end, player.getBoundingBox().stretch(look.multiply(4.5)).expand(1.0), other -> !other.isSpectator() && other.canHit(), limit);
+        return found != null && found.getEntity() == target && eye.squaredDistanceTo(found.getPos()) <= 9.0;
+    }
+
+    /**
      * Swings when the weapon is ready and the crosshair is on the creature, a few ticks late and a little off, like
      * anybody. One against one she jumps into the blow, to land it on the way down, where it counts for more; with
      * several on her she stays on the ground, where a sword sweeps.
      */
     private static void fight(MinecraftClient client, ClientPlayerEntity player, Entity target) {
         HitResult hit = client.crosshairTarget;
-        boolean on = hit instanceof EntityHitResult entity && entity.getEntity() == target;
+        boolean on = hit instanceof EntityHitResult entity && entity.getEntity() == target || aimed(player, target);
         float ready = player.getAttackCooldownProgress(0.0F);
         boolean sweep = (flags & SWEEP) != 0;
         if (!sweep && on && ready > 0.8F && ready < 1.0F && player.isOnGround() && !player.isTouchingWater() && (double)player.distanceTo(target) < 3.4) {
             critJump = true;
         }
 
-        if (ready < 1.0F || client.interactionManager == null || player.isUsingItem()) {
+        // A crystal goes off at a touch; a player is struck the moment the arm is all but ready, not a moment after.
+        boolean duel = (flags & DUEL) != 0;
+        boolean crystal = target instanceof net.minecraft.entity.decoration.EndCrystalEntity;
+        if (!crystal && ready < (duel ? 0.95F : 1.0F) || client.interactionManager == null || player.isUsingItem()) {
             return;
         }
 
@@ -738,7 +771,7 @@ public final class PilotClient {
                 VoltaFx.pilotBroke(target.getPos().add(0.0, (double)target.getHeight() * 0.5, 0.0));
             }
             // A creature is struck in an uneven rhythm; a cart or a boat is hammered, or it shakes the blows off between them.
-            swingWait = target instanceof net.minecraft.entity.LivingEntity ? 2 + player.getRandom().nextInt(4) : 0;
+            swingWait = target instanceof net.minecraft.entity.LivingEntity && !duel ? 2 + player.getRandom().nextInt(4) : 0;
             offX = (player.getRandom().nextDouble() - 0.5) * (double)target.getWidth() * 0.5;
             offY = (player.getRandom().nextDouble() - 0.5) * 0.3;
         }

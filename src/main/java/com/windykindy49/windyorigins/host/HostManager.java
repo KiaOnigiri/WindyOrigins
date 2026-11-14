@@ -1949,6 +1949,24 @@ public final class HostManager {
     /** The slot of the tool for this block, or -1. What the Host holds wins if it does the job: the Host chose it. */
     private static int toolSlot(PlayerInventory inventory, BlockState state) {
         int hand = inventory.selectedSlot;
+        if (crop(state)) {
+            // A crop breaks at a touch and wears nothing out, so what cuts it is chosen for what it brings in.
+            int lucky = -1;
+            int most = 0;
+
+            for (int i = 0; i < inventory.main.size(); i++) {
+                int level = fortune(inventory.main.get(i));
+                if (level > most || level == most && level > 0 && i == hand) {
+                    most = level;
+                    lucky = i;
+                }
+            }
+
+            if (lucky >= 0) {
+                return lucky;
+            }
+        }
+
         if (hand >= 0 && hand < inventory.main.size() && worksOn(inventory.main.get(hand), state) > 0.0F) {
             return hand;
         }
@@ -1965,6 +1983,15 @@ public final class HostManager {
         }
 
         return best;
+    }
+
+    /** What Fortune gets more out of and no tool is worn by: the crops of a field, and nether wart. */
+    static boolean crop(BlockState state) {
+        return state.getBlock() instanceof net.minecraft.block.CropBlock || state.isOf(net.minecraft.block.Blocks.NETHER_WART);
+    }
+
+    static int fortune(ItemStack stack) {
+        return stack.isEmpty() ? 0 : net.minecraft.enchantment.EnchantmentHelper.getLevel(net.minecraft.enchantment.Enchantments.FORTUNE, stack);
     }
 
     /** 0 when the stack is not a tool for this block; otherwise the bigger the better. A tool on its last use is left alone. */

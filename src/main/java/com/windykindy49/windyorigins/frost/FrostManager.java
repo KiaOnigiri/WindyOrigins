@@ -232,6 +232,16 @@ public final class FrostManager {
         liftOntoIce(var0, var3);
     }
 
+    /**
+     * Only the face of the water freezes, and the block right under a body that is in it, which
+     * is what keeps a Frostborn from diving. Air above, as Frost Walker has it: "no water above"
+     * would let the ice creep down a layer a tick, each layer finding ice over it and no water,
+     * and all of that ice then melts block by block on ticks of its own.
+     */
+    private static boolean surface(ServerWorld var0, BlockPos var1) {
+        return var0.getBlockState(var1.up()).isAir();
+    }
+
     private static void freezeDisc(ServerPlayerEntity var0, ServerWorld var1, double var2, double var4, double var6, int var8, Box var9) {
         BlockPos var10 = BlockPos.ofFloored(var2, var4 - 0.2, var6);
         BlockState var11 = Blocks.FROSTED_ICE.getDefaultState();
@@ -243,7 +253,7 @@ public final class FrostManager {
                 if (var14.isOf(Blocks.WATER)
                     && var15.isStill()
                     && var15.getFluid() == Fluids.WATER
-                    && (var9 == null ? var1.getBlockState(var13.up()).getFluidState().isEmpty() : !new Box(var13).intersects(var9))) {
+                    && (var9 == null ? surface(var1, var13) : !new Box(var13).intersects(var9) && (surface(var1, var13) || new Box(var13.up()).intersects(var9)))) {
                     var1.setBlockState(var13, var11);
                     var1.scheduleBlockTick(var13, Blocks.FROSTED_ICE, MathHelper.nextInt(var0.getRandom(), 60, 120));
                 }

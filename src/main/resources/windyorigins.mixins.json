@@ -120,6 +120,7 @@
     "PilotBreakMixin",
     "RifleZoomMixin",
     "SanguineHudMixin",
+    "TranslucentSortMixin",
     "VoltaCameraMixin",
     "VoltaInputMixin",
     "WindyOutlineMixin"
