@@ -65,7 +65,7 @@ teleporting: ore is looked for down a staircase, places on foot.
 - **Gets about like a player in a hurry**: sprint-jumps, parkours over gaps, bridges forwards
   and backwards, rows a boat (on ice too), rides your horse, takes rails in a minecart, flies
   your elytra on your rockets.
-- **Fights**: picks the weapon, shoots a bow, raises the shield, eats and backs off when hurt.
+- **Fights**: picks the weapon, shoots a bow or a crossbow, raises the shield, eats and backs off when hurt.
   Against players she reads the other's attack bar, blocks and answers, takes an axe to a
   shield, throws pearls and potions, sets cobwebs. One who climbs out of reach or walls himself
   in gets an arrow, or has the block broken from under him.
