@@ -288,6 +288,8 @@ public final class Pilot {
         int retreatTicks;
         /** The bow is down for this many ticks more between one arrow and the next. */
         int drawRest;
+        /** How long a loaded crossbow has been waiting for the eyes to come round. */
+        int boltWait;
         /** A screen of a table, an oven or a chest that she opened and has to shut. */
         boolean opened;
         /** Where the body last stood on dry ground, and whether she is on her way back there for air. */
@@ -2262,24 +2264,72 @@ public final class Pilot {
         }
     }
 
-    private static boolean hasBow(ServerPlayerEntity host) {
-        return carries(host, stack -> stack.getItem() instanceof net.minecraft.item.BowItem) && carries(host, stack -> stack.isIn(net.minecraft.registry.tag.ItemTags.ARROWS));
+    private static boolean ranged(ItemStack stack) {
+        return stack.getItem() instanceof net.minecraft.item.BowItem || stack.getItem() instanceof net.minecraft.item.CrossbowItem;
     }
 
-    /** An arrow at it: the string held back until it is full, aimed ahead of where it is going and over it by the drop. */
+    private static boolean hasBow(ServerPlayerEntity host) {
+        // A crossbow that is loaded already needs no arrow in the pockets.
+        return carries(host, stack -> stack.getItem() instanceof net.minecraft.item.CrossbowItem && net.minecraft.item.CrossbowItem.isCharged(stack))
+            || carries(host, Pilot::ranged) && carries(host, stack -> stack.isIn(net.minecraft.registry.tag.ItemTags.ARROWS));
+    }
+
+    /**
+     * An arrow at it, aimed ahead of where it is going and over it by the drop. A bow's string is held back until it
+     * is full. A crossbow is loaded with the button held, the button let go, and then one press sends the bolt; a
+     * loaded one is the first thing she takes, for it is a shot at once.
+     */
     private static void shoot(Run run, ServerPlayerEntity host, LivingEntity foe) {
         run.attackId = -1;
         run.way.clear();
-        run.slot = equip(host, stack -> stack.getItem() instanceof net.minecraft.item.BowItem ? 1.0 + (double)(stack.getMaxDamage() - stack.getDamage()) / 1000.0 : 0.0);
+        boolean arrows = carries(host, stack -> stack.isIn(net.minecraft.registry.tag.ItemTags.ARROWS));
+        run.slot = equip(host, stack -> {
+            double left = (double)(stack.getMaxDamage() - stack.getDamage()) / 1000.0;
+            if (stack.getItem() instanceof net.minecraft.item.CrossbowItem) {
+                // To load one takes longer than to draw a bow, unless it is charmed to load fast.
+                return net.minecraft.item.CrossbowItem.isCharged(stack) ? 3.0 + left : !arrows ? 0.0 : net.minecraft.item.CrossbowItem.getPullTime(stack) < 20 ? 2.5 + left : 1.0 + left;
+            }
+
+            return stack.getItem() instanceof net.minecraft.item.BowItem && arrows ? 2.0 + left : 0.0;
+        });
+        ItemStack held = host.getMainHandStack();
+        boolean crossbow = held.getItem() instanceof net.minecraft.item.CrossbowItem;
         Vec3d eye = host.getEyePos();
         double dx = foe.getX() - eye.x;
         double dz = foe.getZ() - eye.z;
-        double time = Math.sqrt(dx * dx + dz * dz) / 2.7;
+        double time = Math.sqrt(dx * dx + dz * dz) / (crossbow ? 2.9 : 2.7);
         // A player's speed the server is never told: it is what she has seen of where he was a tick ago.
         Vec3d lead = (foe instanceof PlayerEntity ? run.foeSpeed : foe.getVelocity()).multiply(time, 0.0, time);
         run.look = new Vec3d(foe.getX() + lead.x, foe.getY() + (double)foe.getHeight() * 0.6 + 0.03 * time * time, foe.getZ() + lead.z);
-        boolean inHand = host.getInventory().selectedSlot == run.slot && host.getMainHandStack().getItem() instanceof net.minecraft.item.BowItem;
+        boolean inHand = host.getInventory().selectedSlot == run.slot && ranged(held);
         if (!inHand) {
+            return;
+        }
+
+        if (crossbow) {
+            if (net.minecraft.item.CrossbowItem.isCharged(held)) {
+                // One press and it is gone, so the eyes are on him first; not for ever, though.
+                run.boltWait++;
+                if (run.drawRest > 0) {
+                    run.drawRest--;
+                } else if (run.boltWait > 20 || host.getRotationVec(1.0F).dotProduct(run.look.subtract(eye).normalize()) > 0.999) {
+                    run.flags |= USE;
+                }
+            } else {
+                run.boltWait = 0;
+                if (host.isUsingItem()) {
+                    if (host.getItemUseTime() < net.minecraft.item.CrossbowItem.getPullTime(held) + 2) {
+                        run.flags |= USE;
+                    } else {
+                        run.drawRest = 2;
+                    }
+                } else if (run.drawRest > 0) {
+                    run.drawRest--;
+                } else {
+                    run.flags |= USE;
+                }
+            }
+
             return;
         }
 
