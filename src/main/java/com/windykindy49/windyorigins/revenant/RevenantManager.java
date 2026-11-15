@@ -54,7 +54,7 @@ public final class RevenantManager {
     public static final int POSSESS_MAX = 1100;
     public static final int POSSESS_EXTEND = 200;
     public static final int POSSESS_COOLDOWN = 1200;
-    public static final int WISP_COST = 3;
+    public static final int WISP_COST = 1;
     public static final int WISP_TICKS = 1200;
     public static final int VENGEANCE_TICKS = 200;
     private static final int ECHO_LIFE = 200;
