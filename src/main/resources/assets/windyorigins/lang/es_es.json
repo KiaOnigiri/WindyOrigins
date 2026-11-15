@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "Quietud",
   "power.windyorigins.stillness.description": "Quédate quieto 2 segundos y desapareces por completo, armadura incluida.",
   "power.windyorigins.vengeance.name": "Venganza",
-  "power.windyorigins.vengeance.description": "La muerte no te lleva de inmediato: durante 10 segundos eres un fantasma invulnerable, vuelas como en modo Creativo, también a través de las paredes, ves a tu asesino y golpeas con toda tu fuerza atravesando la armadura e infligiendo Debilidad. No puedes tocar bloques. Luego te desvaneces y tus objetos caen donde moriste. No en el vacío ni con /kill.",
+  "power.windyorigins.vengeance.description": "La muerte no te lleva de inmediato: durante 10 segundos eres un fantasma invulnerable, vuelas como en modo Creativo, también a través de las paredes, ves a tu asesino, y cada golpe tuyo quita 2 corazones atravesando la armadura, tengas lo que tengas en la mano, e inflige Debilidad. No puedes tocar bloques. Luego te desvaneces y tus objetos caen donde moriste. No en el vacío ni con /kill.",
   "power.windyorigins.soul_stride.name": "Paso de almas",
   "power.windyorigins.soul_stride.description": "La arena de almas y la tierra de almas no te frenan: te aceleran un 30 %.",
   "power.windyorigins.faded_body.name": "Cuerpo desvaído",
