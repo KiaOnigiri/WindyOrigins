@@ -46,7 +46,7 @@ public final class FrostManager {
     public static final int CHILL_MAX = 100;
     public static final int COFFIN_TICKS = 100;
     public static final int COFFIN_MIN_CHILL = 20;
-    public static final int WALL_COST = 12;
+    public static final int WALL_COST = 30;
     private static final int WALL_TICKS = 300;
     private static final Map<UUID, Entity> COFFINS = new HashMap<>();
 
