@@ -52,7 +52,7 @@ public final class SanguineManager {
     public static final TagKey<Item> ASPEN = TagKey.of(RegistryKeys.ITEM, new Identifier("windyorigins", "aspen"));
     public static final int TASTE_TICKS = 2400;
     public static final int BAT_TICKS = 120;
-    public static final int BAT_COST = 2;
+    public static final int BAT_COST = 4;
     public static final int TASTE_PLAIN = 0;
     public static final int TASTE_ARTHROPOD = 1;
     public static final int TASTE_AQUATIC = 2;
