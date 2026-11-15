@@ -97,8 +97,9 @@ public final class HostManager {
     private static final int QUIET_TICKS = 3600;
     private static final int QUIET_COOLDOWN = 24000;
     private static final int LISTEN_TICKS = 300;
-    private static final int PRANK_MIN = 1200;
-    private static final int PRANK_SPREAD = 1800;
+    /** A prank every six to seven minutes. It was every one to two and a half, which wore thin. */
+    private static final int PRANK_MIN = 7200;
+    private static final int PRANK_SPREAD = 1200;
     private static final double HACK_RANGE = 28.0;
     private static final double SCAN_RANGE = 32.0;
     private static final DustParticleEffect ARC_CYAN = new DustParticleEffect(new Vector3f(0.27F, 0.94F, 0.9F), 0.8F);
@@ -772,7 +773,7 @@ public final class HostManager {
             case BUILD:
                 return build(var0, !var2.has(VoltaChat.FLAG_WALL), var2.number());
             case HARVEST:
-                return VoltaChat.thing(var2.subject()).isBlank() ? harvest(var0) : mine(var0, var1, var2);
+                return VoltaChat.thing(var2.subject()).isBlank() ? harvest(var0, var2.has(VoltaChat.FLAG_CHOP) || "log".equals(VoltaChat.canonical(var2.subject()))) : mine(var0, var1, var2);
             case FIND:
                 if (var2.player() != null) {
                     ServerPlayerEntity var7 = var0.getServer().getPlayerManager().getPlayer(var2.player());
@@ -784,7 +785,7 @@ public final class HostManager {
 
                 return find(var0, var2.subject());
             case FETCH:
-                return fetch(var0, var2.subject()) ? 0 : -1;
+                return (var2.has(VoltaChat.FLAG_ALL) && VoltaChat.onlyBoxes(var2.subject()) ? takeAll(var0) : fetch(var0, var2.subject())) ? 0 : -1;
             default:
                 return -1;
         }
@@ -1239,7 +1240,16 @@ public final class HostManager {
             HostNetworking.fx(host, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_POKE, -1, at, HostNetworking.BLUE, 6);
             hostFx(host, ARC_CYAN, at.x, at.y, at.z, 5, 0.12, 0.12, 0.12, 0.0);
             PhaseFx.sound(host, at.x, at.y, at.z, SoundEvents.ENTITY_ITEM_BREAK, SoundCategory.PLAYERS, 0.5F, 1.8F);
+            ItemStack fallen = caughtStack(shot);
             shot.discard();
+            if (!fallen.isEmpty()) {
+                // What she stopped is not gone: it drops where she stopped it.
+                ItemEntity drop = new ItemEntity(host.getWorld(), at.x, at.y, at.z, fallen);
+                drop.setVelocity(0.0, 0.05, 0.0);
+                drop.setToDefaultPickupDelay();
+                host.getWorld().spawnEntity(drop);
+            }
+
             caught = true;
         }
 
@@ -1253,6 +1263,51 @@ public final class HostManager {
 
             st.catchNotice = now;
         }
+    }
+
+    /**
+     * The thing a caught shot was before it was shot: the arrow, the trident with whatever is on it, the snowball,
+     * the bottle. Nothing for what was never a thing (a ghast's fire, a shulker's bullet) or was shot from a bow
+     * that makes its own arrows.
+     */
+    private static ItemStack caughtStack(net.minecraft.entity.projectile.ProjectileEntity shot) {
+        net.minecraft.nbt.NbtCompound nbt = shot.writeNbt(new net.minecraft.nbt.NbtCompound());
+        boolean flying = shot instanceof net.minecraft.entity.projectile.PersistentProjectileEntity;
+        if (flying && ((net.minecraft.entity.projectile.PersistentProjectileEntity)shot).pickupType == net.minecraft.entity.projectile.PersistentProjectileEntity.PickupPermission.CREATIVE_ONLY) {
+            return ItemStack.EMPTY;
+        }
+
+        if (flying || shot instanceof net.minecraft.entity.projectile.thrown.ThrownItemEntity) {
+            for (String key : new String[]{"Trident", "item", "Item"}) {
+                if (nbt.contains(key, 10)) {
+                    ItemStack stack = ItemStack.fromNbt(nbt.getCompound(key));
+                    if (!stack.isEmpty()) {
+                        stack.setCount(1);
+                        return stack;
+                    }
+                }
+            }
+        }
+
+        if (shot instanceof net.minecraft.entity.projectile.SpectralArrowEntity) {
+            return new ItemStack(Items.SPECTRAL_ARROW);
+        }
+
+        if (shot instanceof net.minecraft.entity.projectile.ArrowEntity) {
+            String potion = nbt.getString("Potion");
+            net.minecraft.util.Identifier id = potion.isEmpty() ? null : net.minecraft.util.Identifier.tryParse(potion);
+            if (id != null && !id.getPath().equals("empty") && net.minecraft.registry.Registries.POTION.containsId(id)) {
+                return net.minecraft.potion.PotionUtil.setPotion(new ItemStack(Items.TIPPED_ARROW), net.minecraft.registry.Registries.POTION.get(id));
+            }
+
+            return new ItemStack(Items.ARROW);
+        }
+
+        if (shot instanceof net.minecraft.entity.projectile.thrown.ThrownItemEntity thrown) {
+            return thrown.getStack().copy();
+        }
+
+        return ItemStack.EMPTY;
     }
 
     /** Is this thing in the air and on its way into the Host within the next few ticks? */
@@ -1406,6 +1461,8 @@ public final class HostManager {
         var6.decoy = var4;
         var6.decoyEnds = var0.getWorld().getTime() + (long)DECOY_TICKS;
         HostNetworking.fx(var0, HostNetworking.FX_DECOY, 0, -1, var4, HostNetworking.CYAN, DECOY_TICKS);
+        // A hologram that only its owner sees fools nobody: everyone near is shown it.
+        HostNetworking.shown(var0, HostNetworking.FX_DECOY, var4, HostNetworking.CYAN, DECOY_TICKS);
         HostNetworking.fx(var0, HostNetworking.FX_TENDRIL, HostNetworking.SLOT_PLANT, -1, var4.add(0.0, 1.0, 0.0), HostNetworking.CYAN, 9);
         HostNetworking.word(var0, HostNetworking.WORD_PSST, var4.add(0.0, 2.0, 0.0), HostNetworking.CYAN);
         PhaseFx.sound(var0, var4.x, var4.y, var4.z, SoundEvents.ENTITY_ILLUSIONER_MIRROR_MOVE, SoundCategory.PLAYERS, 1.0F, 1.3F);
@@ -1568,16 +1625,53 @@ public final class HostManager {
     }
 
     /** Fells a whole tree or strips an ore vein, block by block, with the Host's own tool. */
-    private static int harvest(ServerPlayerEntity var0) {
+    /** The log nearest a place, within so many blocks of it. */
+    private static BlockPos nearLog(ServerWorld world, Vec3d at, int radius) {
+        BlockPos centre = BlockPos.ofFloored(at);
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+
+        for (BlockPos pos : BlockPos.iterate(centre.add(-radius, -radius, -radius), centre.add(radius, radius, radius))) {
+            if (world.getBlockState(pos).isIn(net.minecraft.registry.tag.BlockTags.LOGS)) {
+                double d = pos.getSquaredDistance(at);
+                if (d < bestDistance) {
+                    bestDistance = d;
+                    best = pos.toImmutable();
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private static int harvest(ServerPlayerEntity var0, boolean wood) {
         Vec3d var1 = var0.getEyePos();
         ServerWorld var2 = var0.getServerWorld();
         BlockHitResult var3 = var2.raycast(new RaycastContext(var1, var1.add(var0.getRotationVec(1.0F).multiply(16.0)), ShapeType.OUTLINE, FluidHandling.NONE, var0));
-        if (var3.getType() == Type.MISS) {
+        BlockPos trunk = null;
+        if (wood && (var3.getType() == Type.MISS || !var2.getBlockState(var3.getBlockPos()).isIn(net.minecraft.registry.tag.BlockTags.LOGS))) {
+            // "Chop the tree" is said of the tree, not of the leaf or the grass the eyes happen to rest on: the
+            // trunk nearest to where the Host is looking, or failing that the one nearest the Host.
+            if (var3.getType() != Type.MISS) {
+                trunk = nearLog(var2, var3.getPos(), 5);
+            }
+
+            if (trunk == null) {
+                trunk = nearLog(var2, var0.getPos().add(0.0, 2.0, 0.0), 8);
+            }
+
+            if (trunk == null) {
+                say(var0, "no_target", 2);
+                return -1;
+            }
+        }
+
+        if (trunk == null && var3.getType() == Type.MISS) {
             say(var0, "no_target", 2);
             return -1;
         }
 
-        BlockPos var4 = var3.getBlockPos();
+        BlockPos var4 = trunk != null ? trunk : var3.getBlockPos();
         BlockState var5 = var2.getBlockState(var4);
         float var6 = var5.getHardness(var2, var4);
         if (var5.isAir() || var6 < 0.0F || var6 >= 50.0F || var2.getBlockEntity(var4) != null) {
@@ -1623,7 +1717,7 @@ public final class HostManager {
         PhaseFx.sound(var0, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.5F, 1.9F);
         say(var0, var7 ? "harvest_tree" : "harvest_vein", 1, var10.size());
         cast(var0, 3);
-        return var10.size() / 4;
+        return HostCommand.dearer(var10.size()) / 4;
     }
 
     private static void cast(ServerPlayerEntity var0, int var1) {
@@ -1746,7 +1840,7 @@ public final class HostManager {
         int var2 = count(var0, Items.TORCH);
         if (var2 == 0) {
             // No torches to place: she lends the Host her own eyes instead.
-            var0.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 900, 0));
+            var0.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 300, 0));
             HostNetworking.fx(var0, HostNetworking.FX_SELF, 0, -1, var0.getPos(), HostNetworking.GOLD, 20);
             HostNetworking.fx(var0, HostNetworking.FX_STAMP, HostNetworking.STAMP_EYES, -1, var0.getPos(), HostNetworking.PINK, 18);
             say(var0, "no_torches", 2);
@@ -2067,12 +2161,13 @@ public final class HostManager {
         return var0.getServer().getPlayerManager().getPlayer(var1.trim()) != null;
     }
 
-    private static final int SEARCH_PLAYER = 14;
-    private static final int SEARCH_PLAIN = 11;
-    private static final int SEARCH_COMMON = 18;
-    private static final int SEARCH_UNCOMMON = 25;
-    private static final int SEARCH_RARE = 34;
-    private static final int SEARCH_LEGENDARY = 41;
+    private static final int SEARCH_PLAYER = HostCommand.dearer(30);
+    private static final int SEARCH_PLAIN = HostCommand.dearer(25);
+    private static final int SEARCH_COMMON = HostCommand.dearer(40);
+    private static final int SEARCH_UNCOMMON = HostCommand.dearer(55);
+    private static final int SEARCH_RARE = HostCommand.dearer(75);
+    /** Not the full fifteen in the hundred more: that would be more than the chip holds. */
+    private static final int SEARCH_LEGENDARY = Math.min(98, HostCommand.dearer(90));
 
     /**
      * What looking through the ground for something costs the chip, in heat. The rarer the thing, the
@@ -2386,6 +2481,122 @@ public final class HostManager {
         return true;
     }
 
+    /** Near enough to touch and nothing in the way, wherever the Host is looking. */
+    private static boolean atHand(ServerPlayerEntity host, BlockPos pos) {
+        Vec3d eye = host.getEyePos();
+        Vec3d centre = Vec3d.ofCenter(pos);
+        if (centre.squaredDistanceTo(eye) > 4.5 * 4.5) {
+            return false;
+        }
+
+        World world = host.getWorld();
+        BlockPos twin = otherHalf(world, pos);
+
+        for (double[] probe : SIGHT_PROBES) {
+            BlockHitResult hit = world.raycast(new RaycastContext(eye, centre.add(probe[0], probe[1], probe[2]), ShapeType.VISUAL, FluidHandling.NONE, host));
+            if (hit.getType() == Type.MISS || hit.getBlockPos().equals(pos) || hit.getBlockPos().equals(twin)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * "Take everything out of the chests". Every chest, barrel and box the Host can see, and those within four
+     * blocks whichever way the Host is facing, the nearest first; never one behind a wall. Everything in them
+     * goes into the Host's pockets until the pockets are full.
+     */
+    private static boolean takeAll(ServerPlayerEntity host) {
+        ServerWorld world = host.getServerWorld();
+        BlockPos feet = host.getBlockPos();
+        List<LockableContainerBlockEntity> boxes = new ArrayList<>();
+        int range = (int)FETCH_RANGE;
+
+        for (int cx = feet.getX() - range >> 4; cx <= feet.getX() + range >> 4; cx++) {
+            for (int cz = feet.getZ() - range >> 4; cz <= feet.getZ() + range >> 4; cz++) {
+                net.minecraft.world.chunk.WorldChunk chunk = world.getChunkManager().getWorldChunk(cx, cz);
+                if (chunk == null) {
+                    continue;
+                }
+
+                for (BlockEntity entity : chunk.getBlockEntities().values()) {
+                    if (entity instanceof LockableContainerBlockEntity box && Pilot.storage(entity) && box.getPos().getSquaredDistance(host.getEyePos()) <= FETCH_RANGE * FETCH_RANGE
+                        && (sees(host, box.getPos()) || atHand(host, box.getPos()))) {
+                        boxes.add(box);
+                    }
+                }
+            }
+        }
+
+        if (boxes.isEmpty()) {
+            say(host, "pilot_no_storage", 2);
+            return false;
+        }
+
+        Vec3d eye = host.getEyePos();
+        boxes.sort(java.util.Comparator.comparingDouble(box -> box.getPos().getSquaredDistance(eye)));
+        int moved = 0;
+        int opened = 0;
+        boolean full = false;
+
+        for (LockableContainerBlockEntity box : boxes) {
+            BlockPos pos = box.getPos();
+            if (full || !world.canPlayerModifyAt(host, pos) || !box.checkUnlocked(host)) {
+                continue;
+            }
+
+            int before = moved;
+            int shown = -1;
+
+            for (int i = 0; i < box.size(); i++) {
+                ItemStack stack = box.getStack(i);
+                if (stack.isEmpty()) {
+                    continue;
+                }
+
+                ItemStack rest = stack.copy();
+                int had = rest.getCount();
+                int raw = Registries.ITEM.getRawId(rest.getItem());
+                host.getInventory().insertStack(rest);
+                int took = had - rest.getCount();
+                if (took > 0) {
+                    box.setStack(i, rest.isEmpty() ? ItemStack.EMPTY : rest);
+                    moved += took;
+                    shown = shown < 0 ? raw : shown;
+                }
+            }
+
+            if (moved > before) {
+                box.markDirty();
+                int delay = 3 + opened * 4;
+                int item = shown;
+                HostNetworking.fx(host, HostNetworking.FX_GRAB, 0, item, Vec3d.ofCenter(pos), HostNetworking.CYAN, 22);
+                later(host, delay, () -> {
+                    lid(world, pos, true);
+                    LIDS.add(new Object[]{world, pos.toImmutable(), world.getTime() + 14L});
+                });
+                opened++;
+            }
+
+            full = true;
+
+            for (ItemStack slot : host.getInventory().main) {
+                full &= !slot.isEmpty();
+            }
+        }
+
+        host.playerScreenHandler.sendContentUpdates();
+        if (moved > 0) {
+            say(host, "fetched_all", 0, moved);
+            cast(host, 3);
+        } else {
+            say(host, full ? "pockets_full" : "chests_empty", 2);
+        }
+
+        return true;
+    }
+
     /**
      * Takes a stack of the first thing that fits out of the nearest container in sight and hands it to the
      * Host. False when no container in sight holds such a thing; true when one did, even if the Host's
@@ -2656,7 +2867,7 @@ public final class HostManager {
             List<java.util.function.Predicate<BlockState>> wanted = wantedBlocks(alias, exact, partial);
 
             if (wanted.isEmpty()) {
-                int extra = command == HostCommand.DIG ? dig(host, down, number) : harvest(host);
+                int extra = command == HostCommand.DIG ? dig(host, down, number) : harvest(host, request.has(VoltaChat.FLAG_CHOP) || "log".equals(VoltaChat.canonical(request.subject())));
                 if (extra > 0) {
                     addHeat(host, extra);
                 }
@@ -2686,7 +2897,7 @@ public final class HostManager {
                 PhaseFx.sound(host, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.5F, 1.9F);
                 say(host, "mine", 1, found.size(), name);
                 cast(host, 3);
-                addHeat(host, found.size() / 4);
+                addHeat(host, HostCommand.dearer(found.size()) / 4);
                 return;
             }
 

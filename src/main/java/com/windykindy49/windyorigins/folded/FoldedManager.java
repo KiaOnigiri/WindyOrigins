@@ -57,6 +57,8 @@ public final class FoldedManager {
     public static final int KNOT_COST = 25;
     public static final int KNOT_REFUND = 15;
     public static final int HOVER_MIN = 10;
+    /** A point of Fold comes back once in this many ticks: empty to full in a hundred seconds. */
+    public static final int REFILL_EVERY = 20;
     /** Pierces armour outright; Protection still applies, so full netherite Protection IV falls in three shots. */
     public static final float SHOT_DAMAGE = 19.0F;
     public static final double SHOT_RANGE = 160.0;
@@ -175,7 +177,7 @@ public final class FoldedManager {
                         }
                     }
 
-                    if (var2.age % 10 == 0 && var4 < 100 && !var2.isUsingItem()) {
+                    if (var2.age % REFILL_EVERY == 0 && var4 < 100 && !var2.isUsingItem()) {
                         Powers.setResource(var2, "fold", var4 + 1);
                     }
                 }

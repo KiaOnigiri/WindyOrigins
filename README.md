@@ -63,8 +63,9 @@ teleporting: ore is looked for down a staircase, places on foot.
   round the chests for what is missing, smelts. Sows the bare beds, tills a trodden one again,
   cuts crops with whatever has the most Fortune on it.
 - **Gets about like a player in a hurry**: sprint-jumps, parkours over gaps, bridges forwards
-  and backwards, rows a boat (on ice too), rides your horse, takes rails in a minecart, flies
-  your elytra on your rockets.
+  and backwards (and digs the earth for it when her pockets are empty), swims under water, goes
+  down a cliff on a bucket of water and takes the water back, rows a boat (on ice too), rides
+  your horse, takes rails in a minecart, flies your elytra on your rockets.
 - **Fights**: picks the weapon, shoots a bow or a crossbow, raises the shield, eats and backs off when hurt.
   Against players she reads the other's attack bar, blocks and answers, jumps into her blows
   when his cannot come first, takes an axe to a shield and never a blade, throws pearls and
@@ -72,8 +73,8 @@ teleporting: ore is looked for down a staircase, places on foot.
   in gets an arrow, or has the block broken from under him.
 - **Several things in one breath**: "harvest the crops and put them in the chest", "kill Steve,
   then set the respawn point".
-- **The chip heats under her.** She holds the body for two and a quarter minutes of work, forty-five
-  seconds when she is fighting a player, lets go just before the chip cooks and remembers the job;
+- **The chip heats under her.** She holds the body for a minute and three quarters of work, a little
+  over half a minute when she is fighting a player, lets go just before the chip cooks and remembers the job;
   "carry on" picks it up again. Any movement key takes the body back at once.
 
 | | |
