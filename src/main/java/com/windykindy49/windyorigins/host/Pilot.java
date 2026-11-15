@@ -269,6 +269,7 @@ public final class Pilot {
         boolean feinting;
         /** How long she has stood behind the shield with him in reach and not swinging. */
         int guardFor;
+        int pokeAfter;
         float hostHealth;
         int bottleAt = -200;
         int crystalRest;
@@ -4193,8 +4194,10 @@ public final class Pilot {
         boolean hisDown = foe instanceof PlayerEntity player && player.getItemCooldownManager().isCoolingDown(Items.SHIELD);
         // One who has caught her by dropping his shield and striking in the same breath is not walked up to with an
         // axe again: that is what he is waiting for. Him she stands off, a step out of reach, and strikes when the
-        // shield comes down. Unless he has kept it up five seconds on end, which is a different man.
-        boolean wary = duel && run.flashHits > 0 && run.shieldUp < 100;
+        // shield comes down. Unless he has kept it up five seconds on end, which is a different man. That last is
+        // for when she has no shield of her own and the axe is all there is. With one she does not go back to the
+        // axe at all: he has only to wait the five seconds out, and behind her shield she loses nothing by waiting too.
+        boolean wary = duel && run.flashHits > 0 && (run.shieldUp < 100 || shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem()));
         boolean guarded = duel ? hisShield && !hisDown && run.ticks - run.guardSeenAt < 200 && !wary : foe.isBlocking();
         // Blade to blade in the open, each blow throws the two of them apart and it is a second before they meet again:
         // what counts then is how hard one blow lands, not how many the arm could manage. From behind a shield, where
@@ -4241,8 +4244,10 @@ public final class Pilot {
                 && !(foe instanceof PlayerEntity owner && owner.getItemCooldownManager().isCoolingDown(Items.SHIELD));
             // A shield lowered is a shield again a quarter of a second later, and the jump takes longer than that:
             // at a man with a shield to raise the blow goes in from the ground, at once.
+            // Having a shield of her own is no reason to jump: it is down for as long as she is in the air, and a man
+            // with a ready arm who has been waiting for that has all the time he needs.
             boolean leap = !foe.isBlocking() && !hisReady && !host.isTouchingWater() && !host.isClimbing() && !webbed(host) && !aloft(foe)
-                && (cover || run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem()
+                && (run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem()
                     // And when his blow is coming first whatever she does, with nothing to stand behind: then hers had better be the heavy one.
                     || !cover && run.strikeIn <= mine && away < 6.0);
             run.flags |= leap ? CRIT : SWEEP;
@@ -4265,18 +4270,46 @@ public final class Pilot {
             // A player she meets shield first: up for the blow he is about to land, whatever her own arm is doing,
             // since he sees her a moment sooner than she sees him. Down the instant his blow has gone by, hers in
             // while his arm is still coming back, and up again. If he stands there and will not swing, she does.
-            boolean poke = run.guardFor > 30 && !foe.isBlocking();
-            boolean between = duel
-                ? run.strikeIn <= 12 && away < 9.0 && !run.counter && !poke && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
-                : away < 3.8 && host.getAttackCooldownProgress(0.0F) < 0.7F;
-            if (duel && foe.isBlocking() && (run.flashHits == 0 || run.shieldUp >= 100) && host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem && host.getAttackCooldownProgress(0.0F) >= 0.9F) {
-                // The axe is in her hand and his shield is up: her own comes down and the axe goes in. Behind a shield he cannot strike first.
-                between = false;
-                run.flags |= PRESS;
+            // That is for a man who stands in the open. One behind a shield is not standing there: he is waiting for
+            // hers to come down, and the wait is not counted against him. It used to be, so that the moment he
+            // dropped his shield to strike she dropped hers to strike too, and his blow was the one already on its way.
+            boolean hisUp = foe.isBlocking() || foe.isUsingItem() && foe.getActiveItem().getItem() instanceof net.minecraft.item.ShieldItem;
+            if (hisUp) {
+                run.guardFor = 0;
             }
 
-            run.guardFor = duel && between && away < 3.6 ? run.guardFor + 1 : (poke && run.guardFor < 38 ? run.guardFor + 1 : 0);
-            if (duel && (run.counter || poke)) {
+            // And when she does, it is after a wait he cannot count: four to seven seconds, not the same second and
+            // a half every time, which a patient man learns and is ready for.
+            if (run.guardFor == 0) {
+                run.pokeAfter = 80 + host.getRandom().nextInt(60);
+            }
+
+            boolean poke = run.guardFor > run.pokeAfter && !hisUp;
+            // Her answer to a blow of his is for a blow struck within reach of her. One struck at the air from further
+            // off is an invitation to lower the shield and walk into the next.
+            boolean answer = run.counter && away < 4.2;
+            boolean between = duel
+                ? run.strikeIn <= 12 && away < 9.0 && !answer && !poke && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
+                : away < 3.8 && host.getAttackCooldownProgress(0.0F) < 0.7F;
+            if (duel && foe.isBlocking() && !wary && host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem) {
+                // The axe is in her hand and his shield is up. Behind it he cannot strike first, but he can drop it and
+                // strike in less time than she takes to cross the last two blocks. So she crosses them behind her own
+                // shield, and lowers it only where the axe reaches and only when the arm is at its full: a blow of his
+                // on the way lands on it, and hers is out the tick after her shield is down.
+                boolean full = host.getAttackCooldownProgress(-1.0F) >= 1.0F;
+                if (away < 5.0) {
+                    between = !(full && away <= 3.0) && !answer && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
+                } else if (host.getAttackCooldownProgress(0.0F) >= 0.9F) {
+                    between = false;
+                }
+
+                if (host.getAttackCooldownProgress(0.0F) >= 0.9F) {
+                    run.flags |= PRESS;
+                }
+            }
+
+            run.guardFor = hisUp ? 0 : (duel && between && away < 3.6 ? run.guardFor + 1 : (poke && run.guardFor < run.pokeAfter + 8 ? run.guardFor + 1 : 0));
+            if (duel && (answer || poke)) {
                 run.flags |= PRESS;
             }
 
@@ -4340,6 +4373,17 @@ public final class Pilot {
             // and her blow is there first.
             run.flags &= ~(USE | CRIT | KITE | HOLD);
             run.flags |= PRESS | SWEEP | SPRINT | DUEL;
+        }
+
+        if (duel && behind && hisShield && !hisDown && !foe.isBlocking() && run.ticks - run.guardSeenAt <= 20 && away < 5.5 && run.foeCool >= 0.8F
+            && !(run.counter && away < 4.2) && run.ticks - run.feintAt >= 30 && !(foe.isUsingItem() && !(foe.getActiveItem().getItem() instanceof net.minecraft.item.ShieldItem))) {
+            // He was behind his shield a moment ago, it is down, his arm is ready and he is within a lunge of her: the
+            // blow he lowered it for is already on its way, and nothing of hers gets there first. Her shield stays
+            // up and takes it. Then his arm is spent and his shield is a quarter of a second from being a shield
+            // again, and her blow is in before it is.
+            run.flags |= USE | HOLD | DUEL;
+            run.flags &= ~(PRESS | CRIT | KITE);
+            return;
         }
 
         if (duel && foe.isBlocking() && !(host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem)) {
