@@ -221,12 +221,18 @@ public final class VoltaFx {
     public static void add(int kind, int slot, int casterId, int entityId, Vec3d pos, Vec3d source, int color, int ticks) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!own(client, casterId)) {
+            // Somebody else's Volta: all of that is in their head, except the hologram, which stands in the world.
+            if (kind == HostNetworking.FX_DECOY && client.player != null) {
+                ACTIVE.removeIf(fx -> fx.kind == kind && fx.casterId == casterId);
+                ACTIVE.add(new Fx(kind, slot, casterId, entityId, pos, source, color, ticks));
+            }
+
             return;
         }
 
         if (kind == HostNetworking.FX_STOP) {
             if (slot == 2) {
-                ACTIVE.clear();
+                ACTIVE.removeIf(fx -> own(client, fx.casterId));
                 PELLETS.clear();
             } else {
                 int gone = slot == 1 ? HostNetworking.FX_SELF : HostNetworking.FX_TENDRIL;
@@ -269,7 +275,7 @@ public final class VoltaFx {
         }
 
         if (kind == HostNetworking.FX_DECOY || kind == HostNetworking.FX_NODE) {
-            ACTIVE.removeIf(fx -> fx.kind == kind);
+            ACTIVE.removeIf(fx -> fx.kind == kind && fx.casterId == casterId);
         }
 
         if (kind == HostNetworking.FX_STRING || kind == HostNetworking.FX_TAG) {

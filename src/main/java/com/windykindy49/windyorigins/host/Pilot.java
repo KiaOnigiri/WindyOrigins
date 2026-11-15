@@ -126,15 +126,17 @@ public final class Pilot {
     private static final int HOLD = 131072;
     /** A blow at the air, on purpose: he is waiting behind his shield for her arm to be spent, and here it is, with her own shield up after it. */
     private static final int FEINT = 262144;
-    /** Out of a fight with a player a point of heat takes thirty ticks, not nine and a half: two and a quarter minutes from cold to letting go. */
-    static final int HEAT_PEACE = 60;
+    /** Off an edge on purpose: on the way down the eyes go to the ground and what is in the hand is put under her as she lands. */
+    private static final int DROP = 524288;
+    /** Out of a fight with a player a point of heat takes twenty-three and a half ticks, not eight and a half: a minute and three quarters from cold to letting go. */
+    static final int HEAT_PEACE = 47;
     /**
      * Two points of heat in this many ticks while she works, one while she only holds the body and waits: with
      * what taking it costs, a cold chip is at a hundred in forty-five seconds of work.
      */
-    static final int HEAT_EVERY = 19;
+    static final int HEAT_EVERY = 17;
     /** Taking the body is a request like any other. */
-    static final int HEAT_TAKE = 5;
+    static final int HEAT_TAKE = HostCommand.PILOT.heat;
     /** She lets go of the body by herself before the chip cooks, and will not take it this near to that. */
     static final int HEAT_STOP = 95;
     static final int HEAT_REFUSE = 80;
@@ -252,6 +254,16 @@ public final class Pilot {
         /** How long the creeper in front of her has been hissing: it goes off at thirty. */
         int fuse;
         /** How long she has stood off a raised shield; when she last swung at the air to draw it down, and whether she is about to. */
+        /** The most one of his blows has cost her so far. */
+        float blow;
+        /** Blows of his that landed the moment his shield came down: the mark of one who fights by dropping it to strike. */
+        /** A bottle on its way out of the hand: the slot it is in, since when, and whether it is for her own feet. */
+        int bottleSlot = -1;
+        int bottleSince;
+        boolean bottleMend;
+        int flashHits;
+        /** For how many ticks on end his shield has been up. */
+        int shieldUp;
         int holdFor;
         int feintAt = -200;
         boolean feinting;
@@ -315,6 +327,33 @@ public final class Pilot {
         BlockPos water;
         int waterFor;
         /** A cliff she is going down by a waterfall of her own: the edge, which way, how deep, how far along. */
+        /** A height she is jumping from: the edge, which way, how far down, with what in the hand, and how far along. */
+        /** How far ahead the ground is open in a straight line, when it is fit to be run in bounds. */
+        double lineClear;
+        /** How many blocks to stand on she is digging for; 0 when she is not. */
+        int quarry;
+        Direction quarryDir;
+        BlockPos quarryFrom;
+        int quarryTicks;
+        int quarryLoot;
+        int quarryLootId = -1;
+        final Set<Integer> quarryLeft = new HashSet<>();
+        int quarryHad;
+        /** A slime block under her: the height of the last bounce, and where she was a tick ago. */
+        double dropPeak;
+        double dropLastY;
+        int dropRest;
+        boolean dropFalling;
+        int quarryAgain;
+        /** The last tick she was building her way somewhere: a bridge, a pillar, a dig for blocks. */
+        int workAt = -1000;
+        long pathKept;
+        BlockPos dropEdge;
+        Direction dropDir;
+        int dropDepth;
+        int dropStage;
+        int dropTicks;
+        net.minecraft.item.Item dropWith;
         BlockPos fallEdge;
         Direction fallDir;
         int fallDepth;
@@ -1078,6 +1117,198 @@ public final class Pilot {
         }
 
         return 99;
+    }
+
+    /** How many clear blocks lie under this one before something to land on, water counted as that; -1 for lava, or for nothing within sight. */
+    private static int fathom(World world, BlockPos from) {
+        for (int i = 1; i <= 160; i++) {
+            BlockPos below = from.down(i);
+            FluidState fluid = world.getFluidState(below);
+            if (fluid.isIn(FluidTags.LAVA) || world.isOutOfHeightLimit(below)) {
+                return -1;
+            }
+
+            if (fluid.isIn(FluidTags.WATER) || solid(world, below)) {
+                return i - 1;
+            }
+
+            if (!passable(world, below)) {
+                return -1;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Off a height and down. The thing that breaks the fall goes into the hand on the edge; she steps off; on the
+     * way down her own hands do the rest, since the last three blocks of a long fall pass in a tick or two: eyes to
+     * the ground, and the bucket emptied or the block set the moment the ground is in reach. Landed, what was put
+     * there is taken up again: the water back into the bucket, the block broken and picked up.
+     */
+    private static boolean plunge(Run run, ServerPlayerEntity host) {
+        World world = host.getWorld();
+        BlockPos edge = run.dropEdge;
+        BlockPos over = edge.offset(run.dropDir);
+        double bottom = (double)(over.getY() - run.dropDepth);
+        net.minecraft.item.Item with = run.dropWith;
+        run.dropTicks++;
+        if (with == Items.ENDER_PEARL) {
+            // One pearl, thrown from the very lip, and far enough out that it clears the wall on its way down: thrown
+            // from a step back, or at the foot of the wall itself, it lands on the top she is standing on, and that
+            // is a quarter of her health for nothing.
+            if (host.getY() <= bottom + 2.0 || run.dropTicks > 200) {
+                return false;
+            }
+
+            if (run.dropStage > 0) {
+                // It is in the air; she waits where she is.
+                run.flags |= SNEAK;
+                return ++run.dropStage < 60;
+            }
+
+            Vec3d lip = new Vec3d((double)edge.getX() + 0.5 + (double)run.dropDir.getOffsetX() * 0.75, (double)edge.getY(), (double)edge.getZ() + 0.5 + (double)run.dropDir.getOffsetZ() * 0.75);
+            double fx = lip.x - host.getX();
+            double fz = lip.z - host.getZ();
+            double short_ = fx * (double)run.dropDir.getOffsetX() + fz * (double)run.dropDir.getOffsetZ();
+            run.flags |= SNEAK;
+            if (short_ > 0.52 && run.dropTicks < 60) {
+                run.way.add(lip);
+                return true;
+            }
+
+            if (!carries(host, stack -> stack.isOf(Items.ENDER_PEARL))) {
+                return false;
+            }
+
+            if (host.getItemCooldownManager().isCoolingDown(Items.ENDER_PEARL)) {
+                run.dropStage = 1;
+                return true;
+            }
+
+            double out = Math.max(3.5, (double)run.dropDepth / 4.5);
+            pearl(run, host, new Vec3d((double)edge.getX() + 0.5 + (double)run.dropDir.getOffsetX() * (0.5 + out), bottom, (double)edge.getZ() + 0.5 + (double)run.dropDir.getOffsetZ() * (0.5 + out)));
+            run.flags |= SNEAK;
+            return true;
+        }
+
+        if (run.dropStage == 0) {
+            if (run.dropTicks > 200) {
+                return false;
+            }
+
+            if (with != null) {
+                if (!carries(host, stack -> stack.isOf(with))) {
+                    return false;
+                }
+
+                run.slot = equip(host, stack -> stack.isOf(with) ? 1.0 : 0.0);
+                if (!host.getMainHandStack().isOf(with)) {
+                    run.flags |= SNEAK;
+                    return true;
+                }
+            }
+
+            if (host.getY() < (double)edge.getY() - 0.6) {
+                run.dropStage = 1;
+                run.dropTicks = 0;
+            } else {
+                run.way.add(new Vec3d((double)over.getX() + 0.5 + (double)run.dropDir.getOffsetX() * 0.3, (double)edge.getY(), (double)over.getZ() + 0.5 + (double)run.dropDir.getOffsetZ() * 0.3));
+            }
+
+            run.flags |= DROP;
+            return true;
+        }
+
+        run.slot = host.getInventory().selectedSlot;
+        if (run.dropStage == 1) {
+            run.flags |= DROP;
+            run.look = host.getPos().add(0.0, -6.0, 0.0);
+            if (host.isOnGround() || host.isTouchingWater() || host.inPowderSnow || webbed(host) || run.dropTicks > 400) {
+                run.dropStage = 2;
+                run.dropTicks = 0;
+            }
+
+            return true;
+        }
+
+        if (with == Items.SLIME_BLOCK && run.dropTicks < 400) {
+            // It throws her back up, half as high each time. She stays over it, and when the next landing is a small
+            // one she comes down on it with her knees bent, which stops the bouncing; then it is broken and taken.
+            BlockPos.Mutable under = host.getBlockPos().mutableCopy();
+            int gap = 0;
+
+            while (gap < 24 && !world.getBlockState(under).isOf(Blocks.SLIME_BLOCK) && passable(world, under)) {
+                under.move(Direction.DOWN);
+                gap++;
+            }
+
+            if (world.getBlockState(under).isOf(Blocks.SLIME_BLOCK)) {
+                double up = host.getY() - (double)under.getY() - 1.0;
+                // At rest on it means on it for a few ticks running. The instant of a bounce is also "feet on the block":
+                // to break it then is to come down from the top of that bounce onto bare ground.
+                run.dropRest = up <= 0.05 && host.isOnGround() ? run.dropRest + 1 : 0;
+                if (run.dropRest < 4) {
+                    // How high this bounce went, and whether she is on the way down from it.
+                    boolean falling = host.getY() < run.dropLastY - 1.0E-3;
+                    if (run.dropTicks <= 1 || run.dropFalling && !falling) {
+                        // The bottom of a bounce, known by her having stopped coming down: the next one is measured
+                        // from here. Not by her being near the block: a tick before she lands she is near it too, and
+                        // knees bent a tick before a landing from ten blocks up is every bone broken.
+                        run.dropPeak = up;
+                    }
+
+                    run.dropPeak = Math.max(run.dropPeak, up);
+                    run.dropFalling = falling;
+                    run.dropLastY = host.getY();
+                    // Knees bent for the whole of a small bounce, going up as well as coming down: a block of slime
+                    // throws back even one who only stands on it, a finger's height at a time, and bent knees stop that.
+                    // On a high bounce they are straight again before she is over the top of it.
+                    if (run.dropPeak < 2.8) {
+                        run.flags |= SNEAK;
+                    }
+
+                    // Over the middle of it: a bounce that drifts comes down beside the block, from however high it went.
+                    double cx = (double)under.getX() + 0.5 - host.getX();
+                    double cz = (double)under.getZ() + 0.5 - host.getZ();
+                    if (cx * cx + cz * cz > 0.02) {
+                        run.way.add(new Vec3d((double)under.getX() + 0.5, host.getY(), (double)under.getZ() + 0.5));
+                    }
+
+                    run.look = host.getPos().add(0.0, -6.0, 0.0);
+                    return true;
+                }
+
+                run.flags |= SNEAK;
+                strike(run, host, under.toImmutable());
+                return true;
+            }
+        }
+
+        if (run.dropTicks > 80 && with != Items.SLIME_BLOCK || run.dropTicks > 440) {
+            return false;
+        }
+
+        if ((with == Items.WATER_BUCKET || with == Items.POWDER_SNOW_BUCKET) && host.getMainHandStack().isOf(Items.BUCKET)) {
+            // The bucket is empty and she is standing in what was in it.
+            run.flags |= DROP;
+            run.look = host.getPos().add(0.0, -1.0, 0.0);
+            return run.dropTicks < 60;
+        }
+
+        if (with == Items.SLIME_BLOCK || with == Items.HAY_BLOCK) {
+            for (BlockPos at : new BlockPos[]{host.getBlockPos().down(), host.getBlockPos(), BlockPos.ofFloored(host.getX(), host.getY() - 0.6, host.getZ())}) {
+                if (world.getBlockState(at).isOf(net.minecraft.block.Block.getBlockFromItem(with))) {
+                    strike(run, host, at);
+                    return true;
+                }
+            }
+
+            // Broken: a moment for it to be picked up.
+            return run.dropTicks < 12;
+        }
+
+        return false;
     }
 
     /**
@@ -2036,11 +2267,165 @@ public final class Pilot {
         return 45.0;
     }
 
+    /** What one of his blows costs her: the worst she has had from him, or before the first, what his weapon would do through her armour jumped into. */
+    private static float blow(Run run, ServerPlayerEntity host, LivingEntity foe) {
+        if (run.blow > 0.0F) {
+            return run.blow;
+        }
+
+        float raw = foe.getAttributes().hasAttribute(net.minecraft.entity.attribute.EntityAttributes.GENERIC_ATTACK_DAMAGE) ? (float)foe.getAttributeValue(net.minecraft.entity.attribute.EntityAttributes.GENERIC_ATTACK_DAMAGE) : 4.0F;
+        return net.minecraft.entity.DamageUtil.getDamageLeft(raw * 1.5F, (float)host.getArmor(), (float)host.getAttributeValue(net.minecraft.entity.attribute.EntityAttributes.GENERIC_ARMOR_TOUGHNESS));
+    }
+
     /**
-     * Bottles that are thrown. What mends is broken over her own feet when she is hurt; what harms is thrown at
-     * his, and only from far enough off that she does not stand in it herself. True while she is throwing.
+     * How much health a thing gives back: a golden apple four of mending and four on top, the enchanted one four
+     * times that; a bottle of healing four, the strong one eight, at once; a bottle of regeneration a point every
+     * two and a half seconds, the strong one twice as fast, for as long as it lasts. Nothing for what does not mend.
+     */
+    private static float mend(ItemStack stack) {
+        if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE)) {
+            return 32.0F;
+        }
+
+        if (stack.isOf(Items.GOLDEN_APPLE)) {
+            return 8.0F;
+        }
+
+        if (!stack.isOf(Items.POTION) && !stack.isOf(Items.SPLASH_POTION) && !stack.isOf(Items.LINGERING_POTION)) {
+            return 0.0F;
+        }
+
+        float sum = 0.0F;
+
+        for (net.minecraft.entity.effect.StatusEffectInstance effect : net.minecraft.potion.PotionUtil.getPotionEffects(stack)) {
+            if (!effect.getEffectType().isBeneficial()) {
+                return 0.0F;
+            }
+
+            if (effect.getEffectType() == net.minecraft.entity.effect.StatusEffects.INSTANT_HEALTH) {
+                sum += (float)(4 << Math.min(4, effect.getAmplifier()));
+            } else if (effect.getEffectType() == net.minecraft.entity.effect.StatusEffects.REGENERATION) {
+                sum += (float)effect.getDuration() / (float)Math.max(1, 50 >> Math.min(5, effect.getAmplifier()));
+            }
+        }
+
+        return sum;
+    }
+
+    /** Whether a bottle that mends is worth opening now: not when most of it would be wasted, sooner when the next two blows would finish her. */
+    private static boolean mendNow(ServerPlayerEntity host, ItemStack stack, boolean danger) {
+        float gives = Math.min(8.0F, mend(stack));
+        float missing = host.getMaxHealth() - host.getHealth();
+        boolean slow = true;
+
+        for (net.minecraft.entity.effect.StatusEffectInstance effect : net.minecraft.potion.PotionUtil.getPotionEffects(stack)) {
+            slow &= effect.getEffectType() != net.minecraft.entity.effect.StatusEffects.INSTANT_HEALTH;
+        }
+
+        if (gives <= 0.0F || slow && host.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION)) {
+            return false;
+        }
+
+        return missing >= gives * (danger ? 0.6F : 0.85F);
+    }
+
+    /**
+     * Whether an effect is worth a bottle in this fight. Strength is half as much again on every blow, speed is who
+     * catches whom, resistance a fifth off every blow taken: against a player or something big they are worth it,
+     * against a zombie they are a bottle thrown away. Fire resistance when she burns or he fights with fire. The
+     * rest (sight in the dark, breath under water, a soft fall) do nothing for a fight.
+     */
+    private static boolean boon(net.minecraft.entity.effect.StatusEffect type, ServerPlayerEntity host, LivingEntity foe) {
+        net.minecraft.entity.effect.StatusEffectInstance has = host.getStatusEffect(type);
+        if (has != null && has.getDuration() > 100) {
+            return false;
+        }
+
+        if (type == net.minecraft.entity.effect.StatusEffects.STRENGTH || type == net.minecraft.entity.effect.StatusEffects.SPEED || type == net.minecraft.entity.effect.StatusEffects.RESISTANCE) {
+            return foe instanceof PlayerEntity || foe.getMaxHealth() >= 40.0F;
+        }
+
+        if (type == net.minecraft.entity.effect.StatusEffects.FIRE_RESISTANCE) {
+            return host.isOnFire() || host.isInLava() || foe.isOnFire() && foe.isFireImmune() || foe.getMainHandStack().isOf(Items.FLINT_AND_STEEL) || foe.getMainHandStack().isOf(Items.LAVA_BUCKET)
+                || net.minecraft.enchantment.EnchantmentHelper.getFireAspect(foe) > 0;
+        }
+
+        return false;
+    }
+
+    /** A bottle to drink for the fight ahead: every effect in it good, and one of them wanted. */
+    private static boolean draught(ItemStack stack, ServerPlayerEntity host, LivingEntity foe) {
+        if (!stack.isOf(Items.POTION)) {
+            return false;
+        }
+
+        boolean wanted = false;
+
+        for (net.minecraft.entity.effect.StatusEffectInstance effect : net.minecraft.potion.PotionUtil.getPotionEffects(stack)) {
+            if (!effect.getEffectType().isBeneficial()) {
+                return false;
+            }
+
+            wanted |= boon(effect.getEffectType(), host, foe);
+        }
+
+        return wanted;
+    }
+
+    /**
+     * Milk takes everything off, the good with the bad. Worth it when what is on her weakens the arm, slows the
+     * legs, takes the sight or eats at her, and there is nothing on her that she would rather keep.
+     */
+    private static boolean sour(ServerPlayerEntity host) {
+        boolean bad = false;
+
+        for (net.minecraft.entity.effect.StatusEffectInstance effect : host.getStatusEffects()) {
+            net.minecraft.entity.effect.StatusEffect type = effect.getEffectType();
+            if (effect.getDuration() < 100) {
+                continue;
+            }
+
+            if (type == net.minecraft.entity.effect.StatusEffects.STRENGTH || type == net.minecraft.entity.effect.StatusEffects.SPEED || type == net.minecraft.entity.effect.StatusEffects.RESISTANCE || type == net.minecraft.entity.effect.StatusEffects.REGENERATION || type == net.minecraft.entity.effect.StatusEffects.ABSORPTION && host.getAbsorptionAmount() >= 2.0F) {
+                return false;
+            }
+
+            bad |= type == net.minecraft.entity.effect.StatusEffects.WEAKNESS || type == net.minecraft.entity.effect.StatusEffects.SLOWNESS || type == net.minecraft.entity.effect.StatusEffects.POISON || type == net.minecraft.entity.effect.StatusEffects.WITHER || type == net.minecraft.entity.effect.StatusEffects.BLINDNESS || type == net.minecraft.entity.effect.StatusEffects.LEVITATION;
+        }
+
+        return bad;
+    }
+
+    /**
+     * Bottles that are thrown. What mends is broken over her own feet when she has lost about what it gives back,
+     * and sooner when two more blows would finish her; a bottle is never opened to put back a heart. What makes her
+     * stronger or faster goes on before the blades meet, against a player or something big. What harms is thrown at
+     * his feet from far enough off that she does not stand in it herself: weakness first, since it takes most of a
+     * sword away, then poison, then the rest; a bottle of harming from nearer when it would finish him. Never
+     * harming or poison at the undead, whom the first mends and the second does nothing to. True while she is throwing.
      */
     private static boolean bottles(Run run, ServerPlayerEntity host, LivingEntity foe, double away, boolean sees) {
+        if (run.bottleSlot >= 0) {
+            // One is on its way out of the hand, and it is seen through. Taking a bottle out costs the arm its
+            // readiness; to put it back because he has stepped nearer is to have paid that for nothing, twice.
+            ItemStack out = host.getInventory().getStack(run.bottleSlot);
+            boolean thrown = !out.isOf(Items.SPLASH_POTION) && !out.isOf(Items.LINGERING_POTION);
+            if (thrown || run.ticks - run.bottleSince > 34) {
+                run.bottleSlot = -1;
+                run.bottleAt = run.ticks;
+                return false;
+            }
+
+            if (!run.bottleMend && away < 3.2) {
+                // Meant for his feet from a way off, and he is on her already: thrown now it breaks over both of them.
+                run.bottleSlot = -1;
+                run.bottleAt = run.ticks;
+                return false;
+            }
+
+            lob(run, host, foe, away);
+            return true;
+        }
+
         if (run.ticks - run.bottleAt < 14) {
             return false;
         }
@@ -2048,7 +2433,21 @@ public final class Pilot {
         PlayerInventory inventory = host.getInventory();
         ItemStack mend = null;
         ItemStack harm = null;
-        boolean hurt = host.getHealth() <= host.getMaxHealth() * 0.6F;
+        double mendWorth = 0.0;
+        double harmWorth = 0.0;
+        boolean finisher = false;
+        float missing = host.getMaxHealth() - host.getHealth();
+        float have = host.getHealth() + host.getAbsorptionAmount();
+        float blow = blow(run, host, foe);
+        boolean danger = have <= Math.max(6.0F, blow * 2.0F + 0.5F);
+        boolean apart = away > 5.0 || run.strikeIn >= 8 || !sees;
+        // How long before he is on her, at the pace he is closing.
+        int eta = run.noWay || webbed(foe) ? 99 : (int)(Math.max(0.0, away - 3.3) / Math.max(0.1, run.foeClosing));
+        // A bottle takes the hand, and the arm with it, for half a second and more: the hand goes to it, the eyes go
+        // down, it breaks, the blade comes back with the arm at nothing. Against one who jumps into his blows that is
+        // two of them let in for one bottle, and measured against him she came out worse with bottles than without.
+        // So bottles are for when he is not there: thrown back by her blow, held by a web, out of sight, or far.
+        boolean free = !sees || eta >= 14 && away > 5.0;
 
         for (ItemStack stack : inventory.main) {
             if (!stack.isOf(Items.SPLASH_POTION) && !stack.isOf(Items.LINGERING_POTION)) {
@@ -2062,26 +2461,57 @@ public final class Pilot {
 
             boolean good = true;
             boolean bad = true;
-            boolean heals = false;
-            boolean fresh = false;
+            boolean wanted = false;
             boolean news = false;
+            double worth = 0.0;
 
             for (net.minecraft.entity.effect.StatusEffectInstance effect : effects) {
-                good &= effect.getEffectType().isBeneficial();
-                bad &= !effect.getEffectType().isBeneficial();
-                heals |= effect.getEffectType() == net.minecraft.entity.effect.StatusEffects.INSTANT_HEALTH || effect.getEffectType() == net.minecraft.entity.effect.StatusEffects.REGENERATION;
-                fresh |= !host.hasStatusEffect(effect.getEffectType());
-                news |= effect.getEffectType().isInstant() || !foe.hasStatusEffect(effect.getEffectType());
+                net.minecraft.entity.effect.StatusEffect type = effect.getEffectType();
+                good &= type.isBeneficial();
+                bad &= !type.isBeneficial();
+                wanted |= boon(type, host, foe);
+                news |= type.isInstant() || !foe.hasStatusEffect(type);
+                if (type == net.minecraft.entity.effect.StatusEffects.INSTANT_DAMAGE) {
+                    float dealt = (float)(6 << Math.min(4, effect.getAmplifier()));
+                    worth = Math.max(worth, foe.getHealth() <= dealt * 0.8F ? 100.0 : 20.0 + (double)dealt);
+                    news &= !foe.isUndead();
+                } else if (type == net.minecraft.entity.effect.StatusEffects.WEAKNESS) {
+                    worth = Math.max(worth, 40.0);
+                } else if (type == net.minecraft.entity.effect.StatusEffects.POISON) {
+                    worth = Math.max(worth, 30.0);
+                    news &= !foe.isUndead() && !(foe instanceof net.minecraft.entity.mob.SpiderEntity);
+                } else if (type == net.minecraft.entity.effect.StatusEffects.SLOWNESS) {
+                    worth = Math.max(worth, 15.0);
+                } else {
+                    worth = Math.max(worth, 5.0);
+                }
             }
 
-            if (good && fresh && (heals ? hurt : away < 12.0) && (mend == null || heals)) {
-                mend = stack;
-            } else if (bad && news && harm == null) {
+            if (good) {
+                float gives = mend(stack);
+                if (gives > 0.0F) {
+                    if (mendNow(host, stack, danger) && (free || blow <= 4.0F && run.strikeIn >= 8 && Math.min(gives, missing) > blow + 1.0F)) {
+                        // The one that puts back the most of what is missing and wastes the least.
+                        double fit = 100.0 + (double)Math.min(gives, missing) - (double)Math.max(0.0F, Math.min(8.0F, gives) - missing) * 0.5 + (mendNow(host, stack, false) ? 0.0 : -1.0);
+                        if (fit > mendWorth) {
+                            mendWorth = fit;
+                            mend = stack;
+                        }
+                    }
+                } else if (wanted && free && away < 20.0 && mendWorth < 10.0) {
+                    mendWorth = 10.0;
+                    mend = stack;
+                }
+            } else if (bad && news && worth > harmWorth && !(foe instanceof net.minecraft.entity.mob.WitchEntity)) {
+                harmWorth = worth;
                 harm = stack;
+                finisher = worth >= 100.0;
             }
         }
 
-        ItemStack pick = mend != null && run.strikeIn >= 3 ? mend : (harm != null && sees && away >= 4.6 && away <= 7.5 && run.strikeIn >= 4 ? harm : null);
+        // Begun only with time to finish: six or seven ticks from the hand going to the bottle to the bottle breaking.
+        // Straight after a blow of his, or with him out of reach.
+        ItemStack pick = mend != null ? mend : (harm != null && sees && away >= (finisher ? 3.4 : 5.0) && away <= 7.5 && (finisher ? run.strikeIn >= 6 : free) ? harm : null);
         if (pick == null) {
             return false;
         }
@@ -2092,11 +2522,21 @@ public final class Pilot {
             return false;
         }
 
+        run.bottleSlot = slot;
+        run.bottleSince = run.ticks;
+        run.bottleMend = pick == mend;
+        lob(run, host, foe, away);
+        return true;
+    }
+
+    /** The bottle in hand goes where it is meant to: at her own feet, or at his. The button is held until it has left the hand. */
+    private static void lob(Run run, ServerPlayerEntity host, LivingEntity foe, double away) {
+        int slot = run.bottleSlot;
         Vec3d eye = host.getEyePos();
         run.attackId = -1;
         run.way.clear();
         run.slot = slot;
-        if (pick == mend) {
+        if (run.bottleMend) {
             // Straight down: it breaks at her own feet.
             run.look = new Vec3d(eye.x, eye.y - 4.0, eye.z).add(host.getRotationVec(1.0F).multiply(0.4, 0.0, 0.4));
         } else {
@@ -2112,10 +2552,7 @@ public final class Pilot {
         Vec3d want = run.look.subtract(eye).normalize();
         if (host.getInventory().selectedSlot == slot && host.getRotationVec(1.0F).dotProduct(want) > 0.99) {
             run.flags |= CLICK;
-            run.bottleAt = run.ticks;
         }
-
-        return true;
     }
 
     /** An ender pearl thrown to land so far off in that direction. */
@@ -2404,9 +2841,11 @@ public final class Pilot {
             ZombieEntity scout = new ZombieEntity(EntityType.ZOMBIE, host.getWorld());
             EntityAttributeInstance range = scout.getAttributeInstance(EntityAttributes.GENERIC_FOLLOW_RANGE);
             if (range != null) {
-                range.setBaseValue(48.0);
+                range.setBaseValue(64.0);
             }
 
+            // A mob gives up on a way round after a few hundred steps of looking. She looks four times as far.
+            scout.getNavigation().setRangeMultiplier(4.0F);
             scout.getNavigation().setCanSwim(true);
             scout.getNavigation().getNodeMaker().setCanOpenDoors(true);
             scout.getNavigation().getNodeMaker().setCanEnterOpenDoors(true);
@@ -2421,9 +2860,82 @@ public final class Pilot {
         ZombieEntity scout = scout(run, host);
         scout.refreshPositionAndAngles(host.getX(), host.getY(), host.getZ(), host.getYaw(), 0.0F);
         scout.setOnGround(true);
-        run.path = scout.getNavigation().findPathTo(goal, 1);
+        Path fresh = scout.getNavigation().findPathTo(goal, 1);
+        boolean same = run.path != null && run.pathGoal != null && goal.isWithinDistance(run.pathGoal, 1.5);
+        long now = host.getWorld().getTime();
+        if ((fresh == null || fresh.getLength() == 0) && same && run.path.getLength() > 0 && now - run.pathKept < 60L) {
+            // Asked from a bad spot, in the air or half in a wall, the game finds no walk. The one she has is still
+            // good for the next second: she goes on along it instead of stopping to think.
+            run.pathAt = now - 20L;
+            return;
+        }
+
+        run.path = fresh;
         run.pathGoal = goal;
-        run.pathAt = host.getWorld().getTime();
+        run.pathAt = now;
+        run.pathKept = now;
+    }
+
+    /**
+     * Whether the body can go straight from where it stands to a step further along the walk: every step up to it on
+     * the level she is on, and under the whole width of her, all the way, a floor to walk on and nothing in the way.
+     * 0 for no, 1 for yes, 2 when there is room to run it in bounds as well.
+     */
+    private static int line(ServerPlayerEntity host, Path path, int from, int to) {
+        World world = host.getWorld();
+        PathNode end = path.getNode(to);
+
+        for (int i = from; i <= to; i++) {
+            if (path.getNode(i).y != end.y) {
+                return 0;
+            }
+        }
+
+        double rise = (double)end.y - host.getY();
+        if (rise > 0.6 || rise < -0.1) {
+            return 0;
+        }
+
+        double px = host.getX();
+        double pz = host.getZ();
+        double sx = (double)end.x + 0.5 - px;
+        double sz = (double)end.z + 0.5 - pz;
+        double len = Math.sqrt(sx * sx + sz * sz);
+        if (len < 1.3) {
+            return 0;
+        }
+
+        int steps = (int)Math.ceil(len / 0.3);
+        boolean bounds = true;
+        LongSet seen = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+        BlockPos.Mutable at = new BlockPos.Mutable();
+
+        for (int i = 0; i <= steps; i++) {
+            double x = px + sx * (double)i / (double)steps;
+            double z = pz + sz * (double)i / (double)steps;
+
+            for (int corner = 0; corner < 4; corner++) {
+                at.set(MathHelper.floor(x + ((corner & 1) == 0 ? -0.36 : 0.36)), end.y, MathHelper.floor(z + ((corner & 2) == 0 ? -0.36 : 0.36)));
+                if (!seen.add(at.asLong())) {
+                    continue;
+                }
+
+                BlockPos cell = at.toImmutable();
+                BlockState feet = world.getBlockState(cell);
+                net.minecraft.util.shape.VoxelShape shape = feet.getCollisionShape(world, cell);
+                if (!shape.isEmpty() && shape.getMax(Direction.Axis.Y) > 0.5 || !feet.getFluidState().isEmpty() || !world.getBlockState(cell.up()).getCollisionShape(world, cell.up()).isEmpty()) {
+                    return 0;
+                }
+
+                if (net.minecraft.entity.ai.pathing.LandPathNodeMaker.getLandNodeType(world, at.set(cell)) != net.minecraft.entity.ai.pathing.PathNodeType.WALKABLE) {
+                    return 0;
+                }
+
+                bounds &= passable(world, cell.up(2)) && shape.isEmpty() && !(world.getBlockState(cell.down()).getBlock() instanceof net.minecraft.block.FarmlandBlock);
+            }
+        }
+
+        return bounds ? 2 : 1;
     }
 
     /** Lays the next few steps of the planned walk in front of the body. False when the walk has nothing more to give. */
@@ -2433,28 +2945,73 @@ public final class Pilot {
             return false;
         }
 
-        int at = -1;
+        // Where on the walk the body is: on the stretch between two steps that it is nearest to, and so headed for
+        // the far end of that stretch. Measured to the middles of blocks instead, a body on the lip of a step down
+        // was nearer the block behind it than the one below, turned back for it, came forward again, and hung there.
+        int count = path.getLength();
+        double px = host.getX();
+        double py = host.getY();
+        double pz = host.getZ();
+        int from = 0;
         double best = Double.MAX_VALUE;
+        run.lineClear = 0.0;
 
-        for (int i = 0; i < path.getLength(); i++) {
+        for (int i = 0; i < count; i++) {
             PathNode node = path.getNode(i);
-            double dx = (double)node.x + 0.5 - host.getX();
-            double dy = (double)node.y - host.getY();
-            double dz = (double)node.z + 0.5 - host.getZ();
-            double d = dx * dx + dz * dz + dy * dy * 0.5;
+            double ax = (double)node.x + 0.5;
+            double az = (double)node.z + 0.5;
+            double bx = ax;
+            double by = (double)node.y;
+            double bz = az;
+            double along = 0.0;
+            if (i + 1 < count) {
+                PathNode next = path.getNode(i + 1);
+                double sx = (double)next.x + 0.5 - ax;
+                double sz = (double)next.z + 0.5 - az;
+                double len = sx * sx + sz * sz;
+                if (len > 1.0E-4) {
+                    along = MathHelper.clamp(((px - ax) * sx + (pz - az) * sz) / len, 0.0, 1.0);
+                }
+
+                bx = ax + sx * along;
+                bz = az + sz * along;
+                by = (double)node.y + (double)(next.y - node.y) * along;
+            }
+
+            double d = (bx - px) * (bx - px) + (bz - pz) * (bz - pz) + (by - py) * (by - py) * 0.5;
             if (d <= best) {
                 best = d;
-                at = i;
+                from = along > 0.0 ? i + 1 : i;
             }
         }
 
-        // The nearest step is taken as made once the body stands on it.
-        PathNode near = path.getNode(at);
-        double dx = (double)near.x + 0.5 - host.getX();
-        double dz = (double)near.z + 0.5 - host.getZ();
-        int from = dx * dx + dz * dz < 0.42 && Math.abs((double)near.y - host.getY()) < 1.2 ? at + 1 : at;
-        if (from >= path.getLength()) {
+        // A step is made once the body stands on it: over it, and not still on the lip above it.
+        PathNode near = path.getNode(from);
+        double dx = (double)near.x + 0.5 - px;
+        double dz = (double)near.z + 0.5 - pz;
+        double above = py - (double)near.y;
+        if (dx * dx + dz * dz < 0.42 && above > -1.2 && (above < 0.6 || !host.isOnGround() && above < 1.2)) {
+            from++;
+        }
+
+        if (from >= count) {
             return false;
+        }
+
+        if (host.isOnGround() && !host.isTouchingWater() && !host.isClimbing()) {
+            // Open ground is crossed in a line, not from the middle of one block to the middle of the next: the
+            // furthest of the next steps that she can walk straight to, on her own level, with floor all the way.
+            for (int j = Math.min(count - 1, from + 7); j > from; j--) {
+                int clear = line(host, path, from, j);
+                if (clear > 0) {
+                    PathNode far = path.getNode(j);
+                    double fx = (double)far.x + 0.5 - px;
+                    double fz = (double)far.z + 0.5 - pz;
+                    run.lineClear = clear > 1 ? Math.sqrt(fx * fx + fz * fz) : 0.0;
+                    from = j;
+                    break;
+                }
+            }
         }
 
         World world = host.getWorld();
@@ -2554,6 +3111,28 @@ public final class Pilot {
             run.way.clear();
         }
 
+        if (run.quarry > 0) {
+            if (quarrying(run, host)) {
+                return false;
+            }
+
+            run.quarryAgain = run.ticks + (fillers(host) >= run.quarry ? 0 : 1200);
+            run.quarry = 0;
+            run.path = null;
+            run.way.clear();
+        }
+
+        if (run.dropEdge != null) {
+            if (plunge(run, host)) {
+                return false;
+            }
+
+            run.dropEdge = null;
+            run.fallAgain = run.ticks + 200;
+            run.path = null;
+            run.way.clear();
+        }
+
         if (run.fallEdge != null) {
             if (waterfall(run, host)) {
                 return false;
@@ -2588,7 +3167,10 @@ public final class Pilot {
         }
 
         long now = host.getWorld().getTime();
-        if (run.path == null || run.pathGoal == null || !goal.isWithinDistance(run.pathGoal, 1.5) || now - run.pathAt > 30L) {
+        // The walk is thought over again every second and a half with her feet on something, and not in the middle
+        // of a jump or a fall, where the answer is worth nothing.
+        boolean footed = host.isOnGround() || host.isTouchingWater() || host.isClimbing() || host.hasVehicle();
+        if (run.path == null || run.pathGoal == null || !goal.isWithinDistance(run.pathGoal, 1.5) || now - run.pathAt > (footed ? 30L : 100L)) {
             plan(run, host, goal);
             if (dig > NONE && run.path != null && run.path.getLength() > 16 && host.isOnGround()) {
                 // A long way round, or none: is it quicker straight across on blocks of her own?
@@ -2644,14 +3226,16 @@ public final class Pilot {
 
         if (dx * dx + dz * dz > 100.0) {
             run.flags |= SPRINT;
-            if (dx * dx + dz * dz > 400.0 && run.way.size() >= 5 && host.getHungerManager().getFoodLevel() > 10 && run.usePos == null) {
-                // The next five steps in one line, on one level, with room overhead: she bounds along.
+            if (dx * dx + dz * dz > 49.0 && !run.way.isEmpty() && host.getHungerManager().getFoodLevel() > 6 && run.usePos == null) {
+                // The next few steps in one line, on one level, with room overhead: she bounds along, as anyone
+                // does who wants to get somewhere.
                 World world = host.getWorld();
+                int ahead = Math.min(5, run.way.size());
                 Vec3d first = run.way.get(0);
-                Vec3d last = run.way.get(4);
-                boolean level = true;
+                Vec3d last = run.way.get(ahead - 1);
+                boolean level = run.way.size() >= 3;
 
-                for (int i = 0; i < 5 && level; i++) {
+                for (int i = 0; i < ahead && level; i++) {
                     Vec3d step = run.way.get(i);
                     double across = Math.abs((last.x - first.x) * (step.z - first.z) - (last.z - first.z) * (step.x - first.x));
                     BlockPos cell = BlockPos.ofFloored(step);
@@ -2659,7 +3243,7 @@ public final class Pilot {
                     level = Math.abs(step.y - host.getY()) < 0.1 && across < 2.0 && passable(world, cell.up(2)) && solid(world, cell.down()) && world.getFluidState(cell).isEmpty() && !(world.getBlockState(cell.down()).getBlock() instanceof net.minecraft.block.FarmlandBlock) && !(world.getBlockState(cell).getBlock() instanceof net.minecraft.block.FarmlandBlock);
                 }
 
-                if (level) {
+                if (level || run.lineClear >= 3.0) {
                     run.flags |= HOP;
                 }
             }
@@ -2763,6 +3347,113 @@ public final class Pilot {
     }
 
     /**
+     * Blocks are wanted, for a bridge or to stand on, and the pockets are empty of them: she will dig them. Back from
+     * where she stands, a stair down into the ground, a few steps; every step of it is earth or stone in the pockets.
+     */
+    private static boolean needBlocks(Run run, ServerPlayerEntity host, int count, Direction back) {
+        if (run.quarry > 0 || run.ticks < run.quarryAgain || !host.isOnGround() || host.isTouchingWater() || !hasRoom(host)) {
+            return false;
+        }
+
+        run.quarry = Math.min(48, count);
+        run.quarryDir = back;
+        run.quarryFrom = host.getBlockPos();
+        run.quarryTicks = 0;
+        run.quarryLoot = 0;
+        run.quarryLootId = -1;
+        run.quarryLeft.clear();
+        run.quarryHad = fillers(host);
+        return true;
+    }
+
+    private static boolean quarrying(Run run, ServerPlayerEntity host) {
+        run.quarryTicks++;
+        run.workAt = run.ticks;
+        int have = fillers(host);
+        if (have >= run.quarry || run.quarryTicks > 900 || host.getY() < (double)run.quarryFrom.getY() - 9.0 || !hasRoom(host)) {
+            return false;
+        }
+
+        if (have != run.quarryHad) {
+            run.quarryHad = have;
+            run.quarryLoot = 0;
+        }
+
+        // Digging is not being stuck, however little ground it covers.
+        run.stuck = 0;
+        // What she has knocked out lies in the step she cut: over it first. Not one that has slid under the ground
+        // she stands on, where no walking gets to it, and not one she has already given two seconds to: she used to
+        // give it two seconds, look away for a tick, and give it two more, for ever.
+        ItemEntity loose = null;
+        double nearest = Double.MAX_VALUE;
+
+        for (ItemEntity item : host.getWorld().getEntitiesByClass(ItemEntity.class, host.getBoundingBox().expand(4.0, 2.5, 4.0), x -> x.isAlive() && fillerWorth(x.getStack()) > 0.0 && !run.quarryLeft.contains(x.getId()))) {
+            double dx = item.getX() - host.getX();
+            double dz = item.getZ() - host.getZ();
+            if (dx * dx + dz * dz < 0.7 * 0.7 && item.getY() < host.getY() - 1.2) {
+                continue;
+            }
+
+            double d = item.squaredDistanceTo(host);
+            if (d < nearest) {
+                nearest = d;
+                loose = item;
+            }
+        }
+
+        if (loose != null) {
+            if (loose.getId() != run.quarryLootId) {
+                run.quarryLootId = loose.getId();
+                run.quarryLoot = 0;
+            }
+
+            if (++run.quarryLoot > 40) {
+                run.quarryLeft.add(loose.getId());
+            }
+
+            run.way.add(lies(host, loose));
+            return true;
+        }
+
+        Vec3d down = host.getPos().add((double)run.quarryDir.getOffsetX() * 8.0, -8.0, (double)run.quarryDir.getOffsetZ() * 8.0);
+        burrow(run, host, down, run.quarryDir, false);
+        return true;
+    }
+
+    /**
+     * To a thing lying on the ground. One that lies where she cannot step, on the leaves of the tree it fell out of,
+     * is not left there: whatever leaf holds it up is knocked out from below and it comes down to her; if it is
+     * higher than her arm reaches she goes up to it on blocks of her own.
+     */
+    static void fetch(Run run, ServerPlayerEntity host, ItemEntity item, int dig) {
+        World world = host.getWorld();
+        if (item.isOnGround() && item.getY() - host.getY() > 1.3) {
+            BlockPos under = BlockPos.ofFloored(item.getX(), item.getY() - 0.3, item.getZ());
+            if (world.getBlockState(under).isIn(net.minecraft.registry.tag.BlockTags.LEAVES)) {
+                Vec3d eye = host.getEyePos();
+                double fx = item.getX() - host.getX();
+                double fz = item.getZ() - host.getZ();
+                run.workAt = run.ticks;
+                if (eye.squaredDistanceTo(Vec3d.ofCenter(under)) <= REACH * REACH) {
+                    dig(run, host, under, false);
+                    return;
+                }
+
+                if (fx * fx + fz * fz > 4.0) {
+                    walk(run, host, new Vec3d(item.getX(), host.getY(), item.getZ()), 1.5, dig, true);
+                    return;
+                }
+
+                if (pillar(run, host) || needBlocks(run, host, (int)(item.getY() - host.getY()) + 2, host.getHorizontalFacing().getOpposite())) {
+                    return;
+                }
+            }
+        }
+
+        walk(run, host, lies(host, item), 0.3, dig, false);
+    }
+
+    /**
      * One step of a tunnel towards a place: what is in the way of the next cell is broken, then the body steps
      * into it. Rises a block a step when the place is above and sinks a block a step when it is below. A given
      * direction is kept for a straight shaft.
@@ -2791,7 +3482,12 @@ public final class Pilot {
         double offX = (double)feet.getX() + 0.5 - host.getX();
         double offZ = (double)feet.getZ() + 0.5 - host.getZ();
         boolean bridging = drop(world, feet.offset(dir)) > 3 && hasFiller(host);
-        if (!bridging && offX * offX + offZ * offZ > 0.16 && passable(world, feet) && passable(world, feet.up())) {
+        // Off the middle to one side, or short of it: back to the middle. Past the middle the way she is going is
+        // not off it, it is on her way. Sent back from there she went forward again and was sent back again, for
+        // ever, whenever she was going slowly enough to be caught at it: at a creep towards an edge.
+        double past = -(offX * (double)dir.getOffsetX() + offZ * (double)dir.getOffsetZ());
+        double aside = offX * offX + offZ * offZ - past * past;
+        if (!bridging && (aside > 0.16 || past < -0.4) && passable(world, feet) && passable(world, feet.up())) {
             run.way.add(new Vec3d((double)feet.getX() + 0.5, host.getY(), (double)feet.getZ() + 0.5));
             return;
         }
@@ -2859,16 +3555,74 @@ public final class Pilot {
                     }
                 }
 
-                int reach = Math.min(24, fillers(host) + 1);
+                int reach = Math.min(40, fillers(host) + 1);
+                int span = 0;
 
-                for (int i = 2; i <= reach && !beyond; i++) {
+                for (int i = 2; i <= 40 && span == 0; i++) {
                     BlockPos far = feet.offset(dir, i);
-                    beyond = solid(world, far.down()) && !world.getFluidState(far).isIn(FluidTags.LAVA);
+                    if (solid(world, far.down()) && !world.getFluidState(far).isIn(FluidTags.LAVA)) {
+                        span = i;
+                    }
                 }
 
+                beyond = span > 0 && span <= reach;
                 if (beyond && put(run, host, next.down(), (net.minecraft.item.Item)null) == 0) {
                     run.flags |= SNEAK;
+                    run.workAt = run.ticks;
                     return;
+                }
+
+                if (span > 0 && !beyond && run.quarry == 0 && Math.abs(dy) <= 3.0 && needBlocks(run, host, span + 1, dir.getOpposite())) {
+                    // Ground on the far side and nothing to lay across to it: she goes and digs it.
+                    return;
+                }
+
+                int far = fathom(world, next);
+                if (dy < -3.0 && far >= 4 && (double)far <= -dy + 4.0 && run.ticks >= run.fallAgain && host.isOnGround()) {
+                    // A height, and the place is at the foot of it. What the fall would cost her, and what she has
+                    // to take the cost away: water already there; a bucket of water or of powder snow, a bale of hay
+                    // or a cobweb to put under her feet in the last blocks of the fall; a pearl thrown to the bottom.
+                    // A few blocks she simply jumps, if she can spare the hearts. Not a slime block: it throws her back
+                    // up, and riding the bounces out went wrong one time in six when it was tried, once to the death.
+                    boolean wet = world.getFluidState(next.down(far + 1)).isIn(FluidTags.WATER);
+                    boolean cool = HostManager.heat(host) < 60;
+                    float soften = 1.0F - Math.min(0.8F, 0.12F * (float)net.minecraft.enchantment.EnchantmentHelper.getLevel(net.minecraft.enchantment.Enchantments.FEATHER_FALLING, host.getEquippedStack(EquipmentSlot.FEET)));
+                    float harm = wet || host.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.SLOW_FALLING) ? 0.0F : (float)(far - 3) * soften;
+                    net.minecraft.item.Item with = null;
+                    if (harm > 0.0F) {
+                        if (far >= 6 && far <= 150 && cool && !world.getDimension().ultrawarm() && carries(host, stack -> stack.isOf(Items.WATER_BUCKET))) {
+                            with = Items.WATER_BUCKET;
+                        } else if (far <= 60 && carries(host, stack -> stack.isOf(Items.POWDER_SNOW_BUCKET))) {
+                            with = Items.POWDER_SNOW_BUCKET;
+                        } else if (far <= 60 && carries(host, stack -> stack.isOf(Items.HAY_BLOCK)) && harm * 0.2F <= host.getHealth() - 10.0F) {
+                            with = Items.HAY_BLOCK;
+                        } else if (far <= 60 && carries(host, stack -> stack.isOf(Items.COBWEB))) {
+                            with = Items.COBWEB;
+                        } else if (far >= 6 && far <= 40 && host.getHealth() >= 12.0F && carries(host, stack -> stack.isOf(Items.ENDER_PEARL))
+                            && !(far <= 16 && cool && !world.getDimension().ultrawarm() && carries(host, stack -> stack.isOf(Items.WATER_BUCKET)))) {
+                            // Where it will come down, a few blocks out from the wall, has to be the same ground.
+                            int out = (int)Math.round(Math.max(3.5, (double)far / 4.5));
+                            boolean same = true;
+
+                            for (int k = out - 1; k <= out + 1 && same; k++) {
+                                same = Math.abs(fathom(world, feet.offset(dir, k)) - far) <= 2;
+                            }
+
+                            if (same) {
+                                with = Items.ENDER_PEARL;
+                            }
+                        }
+                    }
+
+                    if (with != null || wet && cool || !wet && harm <= 4.0F && host.getHealth() - harm >= 10.0F) {
+                        run.dropEdge = feet;
+                        run.dropDir = dir;
+                        run.dropDepth = far;
+                        run.dropStage = 0;
+                        run.dropTicks = 0;
+                        run.dropWith = with;
+                        return;
+                    }
                 }
 
                 int deep = depth(world, next);
@@ -2926,6 +3680,11 @@ public final class Pilot {
             return;
         }
 
+        if (drop(world, goal.offset(dir)) > 3 && !host.isTouchingWater()) {
+            // The cell she is stepping into is the last before a drop: into it at a creep, which no edge lets go of.
+            run.flags |= SNEAK;
+        }
+
         run.way.add(new Vec3d((double)goal.getX() + 0.5, (double)goal.getY(), (double)goal.getZ() + 0.5));
     }
 
@@ -2962,8 +3721,15 @@ public final class Pilot {
 
         double flatX = centre.x - host.getX();
         double flatZ = centre.z - host.getZ();
-        if (mayBurrow && centre.y - eye.y > 3.2 && flatX * flatX + flatZ * flatZ < 6.3 && pillar(run, host)) {
-            return false;
+        if (mayBurrow && centre.y - eye.y > 3.2 && flatX * flatX + flatZ * flatZ < 6.3) {
+            if (pillar(run, host)) {
+                return false;
+            }
+
+            // Too high for the arm and nothing to stand on: earth is dug for it.
+            if (run.quarry == 0 && !hasFiller(host)) {
+                needBlocks(run, host, (int)(centre.y - eye.y) + 1, host.getHorizontalFacing().getOpposite());
+            }
         }
 
         walk(run, host, Vec3d.ofBottomCenter(pos), 0.4, mayBurrow ? ANYTHING : NONE, false);
@@ -2971,6 +3737,18 @@ public final class Pilot {
     }
 
     // ------------------------------------------------------------------ setting blocks down
+
+    /**
+     * Whether a hissing creeper has her: it goes off a second and a half after the first hiss unless she is seven
+     * blocks away by then, and it stands still while it hisses. If the ticks left are not enough to run that far, the
+     * shield goes up instead, while there is still time for it to come up. If they are enough, she runs, and comes
+     * back to finish it: a shield that takes the blast leaves her whole and the creeper gone, with a hole in the ground.
+     */
+    private static boolean caught(Run run, double away) {
+        int left = 30 - run.fuse;
+        int need = (int)Math.ceil(Math.max(0.0, 7.2 - away) / 0.26);
+        return away < 7.2 && left <= need + 3;
+    }
 
     /** What a pocketful of this is worth as something to stand on: plain earth and rock, never sand that falls or anything of value. */
     private static double fillerWorth(ItemStack stack) {
@@ -2991,6 +3769,9 @@ public final class Pilot {
             || state.isIn(net.minecraft.registry.tag.BlockTags.PLANKS)
             || path.equals("cobblestone")
             || path.equals("cobbled_deepslate")
+            || path.equals("sandstone")
+            || path.equals("red_sandstone")
+            || path.equals("terracotta")
             || path.equals("end_stone");
         return plain ? 1.0 + (double)stack.getCount() / 64.0 : 0.0;
     }
@@ -3150,6 +3931,7 @@ public final class Pilot {
 
         run.way.clear();
         run.flags |= JUMP;
+        run.workAt = run.ticks;
         return true;
     }
 
@@ -3167,6 +3949,10 @@ public final class Pilot {
             run.noWay = false;
             run.fuse = 0;
             run.holdFor = 0;
+            run.bottleSlot = -1;
+            run.flashHits = 0;
+            run.shieldUp = 0;
+            run.blow = 0.0F;
             run.feinting = false;
         } else {
             run.foeSpeed = run.foeSpeed.multiply(0.6).add(foe.getPos().subtract(run.foeWas).multiply(0.4));
@@ -3191,6 +3977,11 @@ public final class Pilot {
             // A beating: his blows landing one after another with none of hers in between.
             float mine = host.getHealth() + host.getAbsorptionAmount();
             if (mine < run.hostHealth - 0.01F) {
+                if (run.ticks - run.guardSeenAt <= 6) {
+                    run.flashHits++;
+                }
+
+                run.blow = Math.max(run.blow, run.hostHealth - mine);
                 run.taken = run.ticks - run.takenAt <= 60 ? run.taken + 1 : 1;
                 run.takenAt = run.ticks;
             }
@@ -3206,6 +3997,9 @@ public final class Pilot {
             run.foeAway = away;
             if (him.isBlocking() || him.isUsingItem() && him.getActiveItem().getItem() instanceof net.minecraft.item.ShieldItem) {
                 run.guardSeenAt = run.ticks;
+                run.shieldUp++;
+            } else {
+                run.shieldUp = 0;
             }
 
             int arm = Math.max(0, (int)Math.ceil((double)((0.9F - cool) * him.getAttackCooldownProgressPerTick())));
@@ -3303,22 +4097,73 @@ public final class Pilot {
             // cannot be on her before she is done: far enough off at the best pace a player makes, the further for a
             // web he is caught in or a meal of his own, or with no way to her at all. If he turns out quicker than
             // that she stops with the mouth full and fights: an apple half eaten is better than a blow taken eating.
-            boolean biting = host.isUsingItem() && (host.getActiveItem().isFood() || host.getActiveItem().isOf(Items.POTION));
-            boolean hurt = host.getHealth() <= host.getMaxHealth() * 0.6F && !host.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION);
+            boolean biting = host.isUsingItem() && (host.getActiveItem().isFood() || host.getActiveItem().isOf(Items.POTION) || host.getActiveItem().isOf(Items.MILK_BUCKET));
             int eta = run.noWay ? 999 : (int)(Math.max(0.0, away - 3.3) / Math.max(0.36, run.foeClosing)) + (webbed(foe) ? 13 : 0)
                 + (foe.isUsingItem() && foe.getActiveItem().isFood() ? foe.getItemUseTimeLeft() : 0);
-            boolean time = eta >= (biting ? host.getItemUseTimeLeft() : 32) + 3;
-            if ((biting || hurt) && time && carries(host, stack -> aidWorth(stack) > 0.0)) {
-                int apple = equip(host, stack -> stack.isOf(Items.ENCHANTED_GOLDEN_APPLE) ? 1000.0 : (stack.isOf(Items.GOLDEN_APPLE) ? 500.0 : aidWorth(stack)));
-                run.slot = apple;
+            int left = biting ? host.getItemUseTimeLeft() : 32;
+            boolean clear = eta >= left + 3;
+            // If he can be on her while she eats, it is a sum. What one of his blows costs her: the worst she has had
+            // from him, or before the first, what his weapon would do through her armour jumped into. How many he
+            // lands before she is done. If one or two would finish her she does not eat, whatever she is holding. If
+            // what is left after them is still most of half her health, and the thing is a golden apple, she eats
+            // through them, as anyone in good armour does.
+            float blow = blow(run, host, foe);
+            float have = host.getHealth() + host.getAbsorptionAmount();
+            float missing = host.getMaxHealth() - host.getHealth();
+            // Hurt enough to mend: four tenths of her health gone, or within two and a half of his blows of the end
+            // with something worth putting back. Not while the last apple is still working.
+            boolean hurt = !host.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION) && (host.getHealth() <= host.getMaxHealth() * 0.6F || have <= blow * 2.5F && missing >= 4.0F);
+            boolean danger = have <= Math.max(6.0F, blow * 2.0F + 0.5F);
+            int hits = eta >= left ? 0 : 1 + (int)((float)(left - eta) / Math.max(5.0F, foe instanceof PlayerEntity swinger ? swinger.getAttackCooldownProgressPerTick() : 20.0F));
+            boolean golden = carries(host, stack -> stack.isOf(Items.GOLDEN_APPLE) || stack.isOf(Items.ENCHANTED_GOLDEN_APPLE));
+            boolean afford = golden && have > blow * 2.0F + 0.5F && have - (float)hits * blow >= Math.max(6.0F, host.getMaxHealth() * 0.4F);
+            boolean time = clear || afford;
+            if (biting && time && (clear || host.getActiveItem().isOf(Items.GOLDEN_APPLE) || host.getActiveItem().isOf(Items.ENCHANTED_GOLDEN_APPLE))) {
+                // What is in the mouth is finished.
+                run.slot = host.getInventory().selectedSlot;
                 run.attackId = -1;
                 run.way.clear();
                 run.look = foe.getEyePos();
-                if (host.getInventory().selectedSlot == apple) {
-                    run.flags |= USE;
-                }
-
+                run.flags |= USE;
                 return;
+            }
+
+            if (hurt && time && (clear ? carries(host, stack -> aidWorth(stack) > 0.0) : golden)) {
+                // Which: the plain golden apple as a rule. The enchanted one, four times as much, is kept for when the
+                // end is two blows off, or there is nothing else. A bottle of healing drunk, with time for it, when
+                // what it gives is what is missing. Bread last: it only feeds the slow mending.
+                boolean plain = carries(host, stack -> stack.isOf(Items.GOLDEN_APPLE));
+                int apple = equip(host, stack -> stack.isOf(Items.ENCHANTED_GOLDEN_APPLE) ? (danger || !plain ? 1000.0 : 300.0)
+                    : (stack.isOf(Items.GOLDEN_APPLE) ? 500.0 : (!clear ? 0.0 : (stack.isOf(Items.POTION) ? (mendNow(host, stack, danger) ? 800.0 : 0.0) : aidWorth(stack)))));
+                if (apple >= 0) {
+                    run.slot = apple;
+                    run.attackId = -1;
+                    run.way.clear();
+                    run.look = foe.getEyePos();
+                    if (host.getInventory().selectedSlot == apple) {
+                        run.flags |= USE;
+                    }
+
+                    return;
+                }
+            }
+
+            if (clear && eta >= 40) {
+                // He is far off, or cannot get to her: time for what is drunk before a fight. Milk if what is on her
+                // is worse than what it would wash off; then the bottles that make the arm heavier and the legs faster.
+                boolean milk = sour(host);
+                int sip = equip(host, stack -> milk && stack.isOf(Items.MILK_BUCKET) ? 50.0 : (draught(stack, host, foe) ? 30.0 : 0.0));
+                if (sip >= 0) {
+                    run.slot = sip;
+                    run.attackId = -1;
+                    run.way.clear();
+                    run.look = foe.getEyePos();
+                    if (host.getInventory().selectedSlot == sip) {
+                        run.flags |= USE;
+                    }
+
+                    return;
+                }
             }
         }
 
@@ -3346,7 +4191,11 @@ public final class Pilot {
         // of what is in the hand sets the arm back to nothing.
         boolean hisShield = foe.getOffHandStack().getItem() instanceof net.minecraft.item.ShieldItem || foe.getMainHandStack().getItem() instanceof net.minecraft.item.ShieldItem;
         boolean hisDown = foe instanceof PlayerEntity player && player.getItemCooldownManager().isCoolingDown(Items.SHIELD);
-        boolean guarded = duel ? hisShield && !hisDown && run.ticks - run.guardSeenAt < 200 : foe.isBlocking();
+        // One who has caught her by dropping his shield and striking in the same breath is not walked up to with an
+        // axe again: that is what he is waiting for. Him she stands off, a step out of reach, and strikes when the
+        // shield comes down. Unless he has kept it up five seconds on end, which is a different man.
+        boolean wary = duel && run.flashHits > 0 && run.shieldUp < 100;
+        boolean guarded = duel ? hisShield && !hisDown && run.ticks - run.guardSeenAt < 200 && !wary : foe.isBlocking();
         // Blade to blade in the open, each blow throws the two of them apart and it is a second before they meet again:
         // what counts then is how hard one blow lands, not how many the arm could manage. From behind a shield, where
         // she answers every blow of his, it is the quick weapon again.
@@ -3355,7 +4204,8 @@ public final class Pilot {
         // is spent anyway, or with him too far off to matter. A ready arm is never thrown away for a better blade,
         // unless the blade in it is no use at all: a sword against a shield that is up.
         ItemStack held = host.getMainHandStack();
-        boolean keep = duel && away < 8.0 && host.getAttackCooldownProgress(0.0F) >= 0.25F && weaponWorth(held) > 0.0 && !(guarded && !(held.getItem() instanceof net.minecraft.item.AxeItem));
+        boolean keep = duel && away < 8.0 && host.getAttackCooldownProgress(0.0F) >= 0.25F && weaponWorth(held) > 0.0 && !(guarded && !(held.getItem() instanceof net.minecraft.item.AxeItem))
+            && !(wary && foe.isBlocking() && held.getItem() instanceof net.minecraft.item.AxeItem);
         run.slot = keep ? host.getInventory().selectedSlot : equip(host, stack -> {
             double worth = open ? blowWorth(stack) : weaponWorth(stack);
             if (crowd && stack.getItem() instanceof net.minecraft.item.SwordItem) {
@@ -3364,6 +4214,10 @@ public final class Pilot {
 
             if (guarded && stack.getItem() instanceof net.minecraft.item.AxeItem) {
                 worth *= 3.0;
+            }
+
+            if (wary && foe.isBlocking() && stack.getItem() instanceof net.minecraft.item.AxeItem) {
+                worth *= 0.2;
             }
 
             return worth;
@@ -3383,7 +4237,11 @@ public final class Pilot {
             // seven ticks off the ground and is not at a run. The jump whenever his own blow cannot come first: he is
             // behind her shield's reach, his arm is spent, he is eating, he is in a web. The run otherwise.
             int air = Math.max(mine, 7);
-            boolean leap = !foe.isBlocking() && !host.isTouchingWater() && !host.isClimbing() && !webbed(host) && !aloft(foe)
+            boolean hisReady = (foe.getOffHandStack().getItem() instanceof net.minecraft.item.ShieldItem || foe.getMainHandStack().getItem() instanceof net.minecraft.item.ShieldItem)
+                && !(foe instanceof PlayerEntity owner && owner.getItemCooldownManager().isCoolingDown(Items.SHIELD));
+            // A shield lowered is a shield again a quarter of a second later, and the jump takes longer than that:
+            // at a man with a shield to raise the blow goes in from the ground, at once.
+            boolean leap = !foe.isBlocking() && !hisReady && !host.isTouchingWater() && !host.isClimbing() && !webbed(host) && !aloft(foe)
                 && (cover || run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem()
                     // And when his blow is coming first whatever she does, with nothing to stand behind: then hers had better be the heavy one.
                     || !cover && run.strikeIn <= mine && away < 6.0);
@@ -3395,12 +4253,13 @@ public final class Pilot {
             }
         }
 
-        run.fuse = foe instanceof CreeperEntity hissing ? (hissing.getFuseSpeed() > 0 ? run.fuse + 1 : Math.max(0, run.fuse - 2)) : 0;
+        // Counted the way the creeper counts it: a tick up for every tick it hisses, a tick down for every tick it does not.
+        run.fuse = foe instanceof CreeperEntity hissing ? (hissing.getFuseSpeed() > 0 ? run.fuse + 1 : Math.max(0, run.fuse - 1)) : 0;
         if (shielded(host) && sees) {
             // The shield goes up at what shoots, at a creeper about to go off, and between one swing and the next.
             // Up while the bow is drawn at her; down, and in at a run, while it is being nocked again.
             boolean shoots = foe instanceof net.minecraft.entity.ai.RangedAttackMob && away > 2.5 && (foe.isUsingItem() || !(foe instanceof MobEntity));
-            boolean fuse = foe instanceof CreeperEntity && run.fuse >= 18 && away < 6.0;
+            boolean fuse = foe instanceof CreeperEntity lit && lit.getFuseSpeed() > 0 && caught(run, away);
             // Against a player it goes up for the blow he is about to land while her own arm is not ready, and comes
             // down the moment it is: his blade on the shield, hers on him.
             // A player she meets shield first: up for the blow he is about to land, whatever her own arm is doing,
@@ -3410,7 +4269,7 @@ public final class Pilot {
             boolean between = duel
                 ? run.strikeIn <= 12 && away < 9.0 && !run.counter && !poke && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
                 : away < 3.8 && host.getAttackCooldownProgress(0.0F) < 0.7F;
-            if (duel && foe.isBlocking() && host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem && host.getAttackCooldownProgress(0.0F) >= 0.9F) {
+            if (duel && foe.isBlocking() && (run.flashHits == 0 || run.shieldUp >= 100) && host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem && host.getAttackCooldownProgress(0.0F) >= 0.9F) {
                 // The axe is in her hand and his shield is up: her own comes down and the axe goes in. Behind a shield he cannot strike first.
                 between = false;
                 run.flags |= PRESS;
@@ -3434,16 +4293,20 @@ public final class Pilot {
             return;
         }
 
-        if (foe instanceof CreeperEntity creeper && creeper.getFuseSpeed() > 0 && away < 8.0) {
+        if (foe instanceof CreeperEntity creeper && away < 8.0 && (creeper.getFuseSpeed() > 0 || run.fuse > 2)) {
             // It hisses for a second and a half before it goes off, and that is time for a blow. She used to back off
             // at the first hiss, it calmed, she came back, and so round for ever. Now: with the arm ready and the hiss
             // young she strikes, at a run so that it is thrown back, and then gets clear until it calms. A shield is
             // for when she cannot get clear in time.
             boolean guard = shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
             boolean ready = host.getAttackCooldownProgress(0.0F) >= 0.9F;
-            if (run.fuse >= 12 || !ready) {
+            // One that has stopped hissing has not forgotten: its fuse runs down as slowly as it ran up, and it takes
+            // up where it left off. She keeps off until it has run right down, and goes in on a fresh one. And the
+            // blow is for the first third of a second of the hiss only: after that there is no getting clear in time.
+            boolean hissing = creeper.getFuseSpeed() > 0;
+            if (!hissing || run.fuse >= 8 || !ready) {
                 Vec3d back = away(host, host.getPos().subtract(foe.getPos()), 7.0);
-                if (guard && (back == null || run.fuse >= 18 && away < 6.0)) {
+                if (guard && (back == null || hissing && caught(run, away))) {
                     // No getting clear in time, or nowhere to go: the shield takes it.
                     run.attackId = -1;
                     run.look = foe.getEyePos();
@@ -3498,21 +4361,30 @@ public final class Pilot {
                     run.feintAt = run.ticks;
                 }
 
-                if (mine && run.holdFor > 30 && run.ticks - run.feintAt > 50 && arm >= 1.0F) {
+                // The moment he chooses he can drop his shield and strike, and his blow is there before hers can be.
+                // So with a shield of her own she stands behind it, just at his reach: his blow goes into it, and hers
+                // is in before his shield is a shield again. With none she keeps out of a lunge's reach altogether,
+                // five blocks off: to get at her he has to come without his shield, and then the blow is hers to time.
+                if (mine) {
+                    run.flags |= USE;
+                }
+
+                if (mine && run.holdFor > 100 && run.ticks - run.feintAt > 120 && arm >= 1.0F) {
                     // The blow at the air is struck from six blocks off. He needs most of a second to cover that with
-                    // his shield down, which is what her arm needs to be ready again: his blow goes into her shield
-                    // and hers is in before his shield is back up. Nearer, her arm would still be spent when he came.
+                    // his shield down, which is what her arm needs to be ready again. She backs off to it behind her
+                    // shield while he is near, and at a walk once he is not.
                     if (away < 6.3) {
                         if (room) {
                             run.flags |= KITE;
+                            if (away > 4.4) {
+                                run.flags &= ~USE;
+                            }
                         }
                     } else if (away < 7.4) {
                         run.feinting = true;
                         run.flags |= FEINT;
                         run.flags &= ~USE;
                     }
-                } else if (mine && run.ticks - run.feintAt < 18) {
-                    run.flags |= USE;
                 }
 
                 return;
@@ -3636,6 +4508,13 @@ public final class Pilot {
         World world = host.getWorld();
         BlockPos mine = host.getBlockPos();
         if (webbed(host)) {
+            // Caught in one. A web holds the feet, not the arm: with him near enough to strike she fights from where
+            // she stands, shield and blade as ever. She used to look down and start cutting, and was killed looking
+            // down. The web is cut when he is out of reach, or caught himself.
+            if (foe.isAlive() && away < 5.5 && !webbed(foe)) {
+                return false;
+            }
+
             BlockPos web = world.getBlockState(mine).isOf(Blocks.COBWEB) ? mine : mine.up();
             int blade = equip(host, stack -> stack.getItem() instanceof net.minecraft.item.ShearsItem ? 3.0 : (stack.getItem() instanceof net.minecraft.item.SwordItem ? 2.0 : 0.0));
             if (blade >= 0) {
@@ -3662,7 +4541,10 @@ public final class Pilot {
         boolean hungry = host.getHealth() <= host.getMaxHealth() * 0.6F && !host.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION) && carries(host, stack -> stack.isOf(Items.GOLDEN_APPLE) || stack.isOf(Items.ENCHANTED_GOLDEN_APPLE));
         boolean flees = run.foeClosing < -0.2 && foe.hurtTime == 0 && away > 4.0;
         // One who runs is out of the blade's reach already: the arm is no loss then.
-        if (!(flees || run.taken >= 2 || hungry) || !spent && !flees) {
+        // And as a matter of course, straight after a blow of her own: the arm is spent anyway, he is a step or two
+        // off, and a man in a web can be struck and stepped back from for as long as it holds him.
+        boolean fresh = host.getAttackCooldownProgress(0.0F) <= 0.45F && away < 4.6 && run.ticks - run.webAt > 70;
+        if (!(flees || run.taken >= 2 || hungry || fresh) || !spent && !flees) {
             run.webTry = 0;
             return false;
         }
@@ -4109,7 +4991,7 @@ public final class Pilot {
             // Between fights: what they dropped.
             ItemEntity loot = lying(host, 7.0, null);
             if (loot != null && hasRoom(host)) {
-                walk(run, host, lies(host, loot), 0.3, NONE, false);
+                fetch(run, host, loot, NONE);
                 return true;
             }
 
@@ -4177,6 +5059,118 @@ public final class Pilot {
         return !item.isOnGround() && at.y > host.getY() && at.y - host.getY() < 1.5 ? new Vec3d(at.x, host.getY(), at.z) : at;
     }
 
+    /** What grows and can be eaten as it is, or baked: a ripe field of wheat, carrots, potatoes or beetroot, a melon, a bush with berries on it. */
+    private static boolean meal(BlockState state) {
+        if (state.isOf(Blocks.WHEAT) || state.isOf(Blocks.CARROTS) || state.isOf(Blocks.POTATOES) || state.isOf(Blocks.BEETROOTS)) {
+            return ((net.minecraft.block.CropBlock)state.getBlock()).isMature(state);
+        }
+
+        return state.isOf(Blocks.MELON) || state.isOf(Blocks.SWEET_BERRY_BUSH) && state.get(net.minecraft.block.SweetBerryBushBlock.AGE) >= 2;
+    }
+
+    /** How many things to eat the body carries. */
+    private static int meals(ServerPlayerEntity host) {
+        int sum = 0;
+
+        for (ItemStack stack : host.getInventory().main) {
+            if (Eat.foodWorth(stack) > 0.0 || stack.isOf(Items.WHEAT)) {
+                sum += stack.getCount();
+            }
+        }
+
+        return sum;
+    }
+
+    /**
+     * "Find food". Over the country for whatever can be eaten: the beasts that are meat, killed and picked up; a
+     * field that is ripe, cut and sown again; a melon, a bush of berries. A beast in sight comes before a field,
+     * since the field stays where it is. Done when she has so many things to eat more than she set out with.
+     */
+    static final class Forage implements Task {
+        private final Hunt hunt;
+        private final Set<BlockPos> skip = new HashSet<>();
+        private final int want;
+        private final int had;
+        private Mine reap;
+        private int ticks;
+        private final Set<Integer> given = new HashSet<>();
+        private int after;
+        private int afterId = -1;
+
+        Forage(ServerPlayerEntity host, int want) {
+            this.hunt = new Hunt(host, meat(), 0, false, 1000000);
+            this.want = Math.min(want, 256);
+            this.had = meals(host);
+        }
+
+        @Override
+        public int label() {
+            return this.reap != null ? L_MINE : L_HUNT;
+        }
+
+        @Override
+        public boolean tick(Run run, ServerPlayerEntity host) {
+            int got = meals(host) - this.had;
+            // What has been knocked out of a beast or a bed and still lies there is hers before she moves on, or stops.
+            ItemEntity lies = hasRoom(host) ? lying(host, 8.0, stack -> Eat.foodWorth(stack) > 0.0 || stack.isOf(Items.WHEAT)) : null;
+            if (lies != null && this.given.contains(lies.getId())) {
+                lies = null;
+            }
+
+            if (got >= this.want && lies == null || ++this.ticks > 6000 || this.ticks % 40 == 0 && !hasRoom(host)) {
+                if (got > 0) {
+                    run.end("pilot_foraged", got);
+                } else {
+                    run.end("pilot_none_far", 0);
+                }
+
+                return false;
+            }
+
+            if (this.reap != null) {
+                if (this.reap.tick(run, host)) {
+                    return true;
+                }
+
+                // That field is done; what she says of it is kept for the end.
+                this.reap = null;
+                run.ending = null;
+                run.endingArgs = new Object[0];
+            }
+
+            if (lies != null && this.hunt.foe == null) {
+                if (lies.getId() != this.afterId) {
+                    this.afterId = lies.getId();
+                    this.after = 0;
+                }
+
+                if (++this.after > 160) {
+                    // Eight seconds and still not in her hand: it lies where she cannot get.
+                    this.given.add(lies.getId());
+                }
+
+                fetch(run, host, lies, NONE);
+                return true;
+            }
+
+            if (this.hunt.foe == null && run.ticks % 20 == 5 && this.hunt.pick(host) == null) {
+                BlockPos ripe = seen(host, Pilot::meal, 14, this.skip);
+                if (ripe != null) {
+                    this.skip.add(ripe);
+                    this.reap = new Mine(host, List.of(Pilot::meal), 64, false, L_MINE);
+                    return true;
+                }
+            }
+
+            if (!this.hunt.tick(run, host)) {
+                run.ending = null;
+                run.endingArgs = new Object[0];
+            }
+
+            return true;
+        }
+    }
+
     /** Walks over what lies about until nothing is left. */
     static final class Collect implements Task {
         private final Predicate<ItemStack> wanted;
@@ -4219,7 +5213,7 @@ public final class Pilot {
                 }
             }
 
-            walk(run, host, lies(host, this.item), 0.2, NONE, false);
+            fetch(run, host, this.item, NONE);
             return true;
         }
     }
@@ -4337,7 +5331,8 @@ public final class Pilot {
                 return null;
             }
 
-            if (this.loot != null && this.loot.isAlive() && this.lootTicks++ < 100) {
+            // Five seconds for one that lies on the ground; three times that for one she has to knock out of a tree.
+            if (this.loot != null && this.loot.isAlive() && this.lootTicks++ < (this.loot.getY() - host.getY() > 1.3 ? 300 : 100)) {
                 return this.loot;
             }
 
@@ -4385,14 +5380,14 @@ public final class Pilot {
             World world = host.getWorld();
             if (this.got >= this.want) {
                 // What fell out of the last one, then that is all.
-                ItemEntity drop = this.wrap++ < 360 ? this.drop(host) : null;
+                ItemEntity drop = this.wrap++ < 700 ? this.drop(host) : null;
                 if (drop != null) {
                     this.settle = 0;
-                    walk(run, host, lies(host, drop), 0.3, ANYTHING, false);
+                    fetch(run, host, drop, ANYTHING);
                     return true;
                 }
 
-                if (this.settle++ < 30 && this.wrap < 360) {
+                if (this.settle++ < 30 && this.wrap < 700) {
                     // The last of it may still be falling out of the wall.
                     return true;
                 }
@@ -4424,7 +5419,8 @@ public final class Pilot {
                     }
 
                     this.target = null;
-                } else if (++this.spent > 400) {
+                } else if ((run.ticks - run.workAt > 5 ? ++this.spent : this.spent) > 400) {
+                    // Twenty seconds without getting to it, not counting what goes on a bridge or a stair to it.
                     this.skip.add(this.target);
                     this.target = null;
                 } else {
@@ -4459,13 +5455,13 @@ public final class Pilot {
                 return true;
             }
 
-            ItemEntity drop = this.got > 0 && this.pause++ < 160 ? this.drop(host) : null;
+            ItemEntity drop = this.got > 0 && this.pause++ < 400 ? this.drop(host) : null;
             if (drop != null) {
                 if (LOG) {
                     com.windykindy49.windyorigins.WindyOrigins.LOGGER.info("PILOT harvest: after a drop {} at {} pause {} she {}", drop.getStack(), String.format("%.2f %.2f %.2f", drop.getX(), drop.getY(), drop.getZ()), this.pause, String.format("%.2f %.2f %.2f", host.getX(), host.getY(), host.getZ()));
                 }
 
-                walk(run, host, lies(host, drop), 0.3, ANYTHING, false);
+                fetch(run, host, drop, ANYTHING);
                 return true;
             }
 
@@ -5265,7 +6261,7 @@ public final class Pilot {
                 if (order.what().equals("crops")) {
                     go(host, new Mine(host, List.of(Pilot::ripe), order.number() > 0 ? order.number() : 128, false, L_MINE), held);
                 } else if (order.what().equals("food")) {
-                    go(host, new Hunt(host, meat(), order.number() > 0 ? order.number() : 3, false, 900), held);
+                    go(host, new Forage(host, order.number() > 0 ? order.number() : 8), held);
                 } else if (order.what().equals("resources")) {
                     resources(host, held);
                 } else if (VoltaChat.thing(subject).isBlank() && alias != null) {
@@ -5291,7 +6287,22 @@ public final class Pilot {
                     HostManager.askNames(host, 0, thing, (exact, partial) -> {
                         Set<Identifier> ids = new HashSet<>(exact.isEmpty() ? partial : exact);
                         String everyday = VoltaChat.canonical(thing);
-                        go(host, new Collect(stack -> ids.contains(Registries.ITEM.getId(stack.getItem())) || ids.isEmpty() && everyday != null && Registries.ITEM.getId(stack.getItem()).getPath().contains(everyday)), held);
+                        Predicate<ItemStack> wanted = stack -> ids.contains(Registries.ITEM.getId(stack.getItem())) || ids.isEmpty() && everyday != null && Registries.ITEM.getId(stack.getItem()).getPath().contains(everyday);
+                        if (lying(host, 20.0, wanted) != null) {
+                            go(host, new Collect(wanted), held);
+                            return;
+                        }
+
+                        // "Collect the cane", said standing in it: none of it lies on the ground, it is growing
+                        // all round. What is asked for is the cutting of it, so that is what she does.
+                        String grown = VoltaChat.thing(subject);
+                        if (grown.isBlank() && alias != null) {
+                            mineNamed(host, order, subject, List.of(), List.of(), held, true);
+                        } else if (!grown.isBlank()) {
+                            HostManager.askNames(host, 1, grown, (blocks, blocksInPart) -> mineNamed(host, order, grown, blocks, blocksInPart, held, true));
+                        } else {
+                            go(host, new Collect(wanted), held);
+                        }
                     });
                 }
             }
@@ -5546,7 +6557,13 @@ public final class Pilot {
             return;
         }
 
-        if (order.what().equals("food") || order.what().equals("animals")) {
+        if (order.what().equals("food")) {
+            // "Find food": whatever can be eaten, wherever it is. Not only the beasts.
+            go(host, new Forage(host, order.number() > 0 ? order.number() : 8), held);
+            return;
+        }
+
+        if (order.what().equals("animals")) {
             go(host, new Hunt(host, meat(), order.number() > 0 ? order.number() : 3, false, 900), held);
             return;
         }
@@ -6498,7 +7515,7 @@ public final class Pilot {
         return best;
     }
 
-    private static boolean storage(net.minecraft.block.entity.BlockEntity entity) {
+    static boolean storage(net.minecraft.block.entity.BlockEntity entity) {
         return entity instanceof net.minecraft.block.entity.ChestBlockEntity || entity instanceof net.minecraft.block.entity.BarrelBlockEntity || entity instanceof net.minecraft.block.entity.ShulkerBoxBlockEntity;
     }
 
@@ -7352,10 +8369,19 @@ public final class Pilot {
         private Lid lid = new Lid();
         private Text name = Text.literal("?");
 
+        /** Everything there is, as long as it fits: nothing is thrown on the floor for want of room. */
+        private boolean all;
+        private boolean full;
+
         Withdraw(List<BlockPos> chests, Predicate<ItemStack> what, int count) {
             this.chests = chests;
             this.what = what;
             this.left = count;
+        }
+
+        Withdraw(List<BlockPos> chests, Predicate<ItemStack> what, int count, boolean all) {
+            this(chests, what, count);
+            this.all = all;
         }
 
         @Override
@@ -7365,6 +8391,17 @@ public final class Pilot {
 
         @Override
         public boolean tick(Run run, ServerPlayerEntity host) {
+            if (this.all && (this.at >= Math.min(this.chests.size(), 24) || this.full)) {
+                shut(run, host);
+                if (this.got > 0) {
+                    run.end("fetched_all", this.got);
+                } else {
+                    run.end(this.full ? "pockets_full" : "chests_empty");
+                }
+
+                return false;
+            }
+
             if (this.at >= Math.min(this.chests.size(), 24) || this.left <= 0) {
                 shut(run, host);
                 run.end(this.got > 0 ? "pilot_fetched" : (this.chests.isEmpty() ? "pilot_no_storage" : "pilot_none"), this.got, this.name);
@@ -7388,6 +8425,19 @@ public final class Pilot {
                         continue;
                     }
 
+                    if (this.all) {
+                        ItemStack rest = slot.getStack().copy();
+                        int had = rest.getCount();
+                        host.getInventory().insertStack(rest);
+                        if (rest.getCount() < had) {
+                            this.got += had - rest.getCount();
+                            slot.setStack(rest.isEmpty() ? ItemStack.EMPTY : rest);
+                            slot.markDirty();
+                        }
+
+                        continue;
+                    }
+
                     this.name = slot.getStack().getName();
                     ItemStack out = slot.takeStack(Math.min(this.left, slot.getStack().getCount()));
                     this.left -= out.getCount();
@@ -7401,6 +8451,8 @@ public final class Pilot {
                 if (this.got > 0) {
                     PhaseFx.sound(host, net.minecraft.sound.SoundEvents.ENTITY_ITEM_PICKUP, net.minecraft.sound.SoundCategory.PLAYERS, 0.4F, 1.2F);
                 }
+
+                this.full = this.all && !hasRoom(host);
             }
 
             shut(run, host);
@@ -7487,6 +8539,17 @@ public final class Pilot {
     private static void withdraw(ServerPlayerEntity host, PilotSpeech.Order order, boolean held) {
         String thing = VoltaChat.loot(order.subject());
         List<BlockPos> chests = meant(host, order);
+        if (VoltaChat.onlyBoxes(thing) && (VoltaChat.saysAll(order.subject()) || !thing.isBlank())) {
+            // "Take everything out of the chests": round all of them, the nearest first, until the pockets are full.
+            if (chests.isEmpty()) {
+                HostManager.say(host, "pilot_no_storage", 2);
+            } else {
+                go(host, new Withdraw(chests, stack -> true, Integer.MAX_VALUE, true), held);
+            }
+
+            return;
+        }
+
         if (thing.isBlank()) {
             HostManager.say(host, "pilot_where", 2);
             return;
