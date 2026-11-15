@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "Bezruch",
   "power.windyorigins.stillness.description": "Stój nieruchomo 2 sekundy, a znikasz całkowicie, razem ze zbroją.",
   "power.windyorigins.vengeance.name": "Zemsta",
-  "power.windyorigins.vengeance.description": "Śmierć nie zabiera cię od razu: przez 10 sekund jesteś niezniszczalnym duchem, latasz jak w trybie kreatywnym, także przez ściany, widzisz swojego zabójcę i bijesz przez zbroję z pełną siłą, nakładając Słabość. Bloków nie możesz dotykać. Potem się rozpływasz, a rzeczy wypadają tam, gdzie zginąłeś. Nie w pustce i nie od /kill.",
+  "power.windyorigins.vengeance.description": "Śmierć nie zabiera cię od razu: przez 10 sekund jesteś niezniszczalnym duchem, latasz jak w trybie kreatywnym, także przez ściany, widzisz swojego zabójcę, a każdy twój cios zabiera 2 serca przez zbroję, cokolwiek trzymasz w ręce, i nakłada Słabość. Bloków nie możesz dotykać. Potem się rozpływasz, a rzeczy wypadają tam, gdzie zginąłeś. Nie w pustce i nie od /kill.",
   "power.windyorigins.soul_stride.name": "Krok dusz",
   "power.windyorigins.soul_stride.description": "Piasek dusz i gleba dusz cię nie spowalniają, tylko przyspieszają o 30%.",
   "power.windyorigins.faded_body.name": "Wyblakłe ciało",

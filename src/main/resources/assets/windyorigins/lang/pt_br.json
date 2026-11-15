@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "Imobilidade",
   "power.windyorigins.stillness.description": "Fique parado por 2 segundos e você some por completo, armadura inclusive.",
   "power.windyorigins.vengeance.name": "Vingança",
-  "power.windyorigins.vengeance.description": "A morte não leva você de imediato: por 10 segundos você é um fantasma invulnerável, voa como no modo Criativo, inclusive através das paredes, vê quem matou você e golpeia com força total através da armadura, causando Fraqueza. Você não pode tocar em blocos. Depois você se desfaz, e seus itens caem onde você morreu. Não no vazio nem com /kill.",
+  "power.windyorigins.vengeance.description": "A morte não leva você de imediato: por 10 segundos você é um fantasma invulnerável, voa como no modo Criativo, inclusive através das paredes, vê quem matou você, e cada golpe seu tira 2 corações através da armadura, não importa o que esteja na sua mão, e causa Fraqueza. Você não pode tocar em blocos. Depois você se desfaz, e seus itens caem onde você morreu. Não no vazio nem com /kill.",
   "power.windyorigins.soul_stride.name": "Passo das Almas",
   "power.windyorigins.soul_stride.description": "Areia das almas e solo das almas não deixam você lento: aceleram você em 30%.",
   "power.windyorigins.faded_body.name": "Corpo Esmaecido",

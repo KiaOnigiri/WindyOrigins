@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "静止",
   "power.windyorigins.stillness.description": "保持不动2秒，你就会连同盔甲完全消失。",
   "power.windyorigins.vengeance.name": "复仇",
-  "power.windyorigins.vengeance.description": "死亡不会立刻带走你：10秒内你是无敌的幽灵，像创造模式一样飞行，也能穿墙，能看见杀死你的人，并以全力穿透护甲攻击，施加虚弱。你无法触碰方块。随后你消散，物品掉落在你死去的地方。在虚空中或被 /kill 时无效。",
+  "power.windyorigins.vengeance.description": "死亡不会立刻带走你：10秒内你是无敌的幽灵，像创造模式一样飞行，也能穿墙，能看见杀死你的人，你的每一击无论手持何物都会穿透护甲夺走2颗心，并施加虚弱。你无法触碰方块。随后你消散，物品掉落在你死去的地方。在虚空中或被 /kill 时无效。",
   "power.windyorigins.soul_stride.name": "灵魂步伐",
   "power.windyorigins.soul_stride.description": "灵魂沙和灵魂土不会让你减速，反而让你加速30%。",
   "power.windyorigins.faded_body.name": "褪色之躯",

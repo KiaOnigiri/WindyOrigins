@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "静止",
   "power.windyorigins.stillness.description": "2秒間動かずにいると、防具ごと完全に姿が消える。",
   "power.windyorigins.vengeance.name": "復讐",
-  "power.windyorigins.vengeance.description": "死はすぐにはあなたを連れ去らない：10秒間、あなたは無敵の亡霊となり、クリエイティブモードのように壁も抜けて飛び、自分を殺した者が見え、防具を貫いて全力で殴り、弱体化を与える。ブロックには触れられない。その後あなたは消え、持ち物は死んだ場所に落ちる。奈落や /kill では発動しない。",
+  "power.windyorigins.vengeance.description": "死はすぐにはあなたを連れ去らない：10秒間、あなたは無敵の亡霊となり、クリエイティブモードのように壁も抜けて飛び、自分を殺した者が見え、あなたの一撃は手に何を持っていても防具を貫いてハート2個分を奪い、弱体化を与える。ブロックには触れられない。その後あなたは消え、持ち物は死んだ場所に落ちる。奈落や /kill では発動しない。",
   "power.windyorigins.soul_stride.name": "魂の歩み",
   "power.windyorigins.soul_stride.description": "ソウルサンドとソウルソイルで遅くならず、逆に30%速くなる。",
   "power.windyorigins.faded_body.name": "色褪せた体",
