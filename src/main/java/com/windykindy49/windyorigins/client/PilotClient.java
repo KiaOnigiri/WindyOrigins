@@ -79,11 +79,17 @@ public final class PilotClient {
     }
 
     public static final int FEINT = 262144;
+    public static final int DROP = 524288;
+    private static int dropWait;
     /** Which way round a raised shield, and for how long yet. */
     private static int holdSide = 1;
     private static int holdFor;
     /** Up for a blow on the way down: the run is let go near the top of the jump, since a blow at a run is never the heavy one. */
     private static boolean critAir;
+    /** Swimming: no try at it for this many ticks more; how long she has been trying to get her head under; up for air. */
+    private static int swimOff;
+    private static int swimDip;
+    private static boolean breathe;
     /** In a duel: straight at him, no circling. */
     public static final int PRESS = 8192;
     /** In a duel: backwards out of his reach, eyes still on him. */
@@ -406,6 +412,10 @@ public final class PilotClient {
         }
     }
 
+    private static boolean wet(MinecraftClient client, BlockPos pos) {
+        return client.world.getFluidState(pos).isIn(net.minecraft.registry.tag.FluidTags.WATER);
+    }
+
     private static float yawTo(ClientPlayerEntity player, Vec3d to) {
         return (float)(MathHelper.atan2(to.z - player.getZ(), to.x - player.getX()) * 180.0 / Math.PI) - 90.0F;
     }
@@ -475,7 +485,9 @@ public final class PilotClient {
             Vec3d step = PATH.get(0);
             double dx = step.x - player.getX();
             double dz = step.z - player.getZ();
-            if (dx * dx + dz * dz < (PATH.size() > 1 ? 0.42 : 0.1) && Math.abs(step.y - player.getY()) < 1.7) {
+            // Made once she is over it, and, with her feet on the ground, not still on the lip of the block above it.
+            double above = player.getY() - step.y;
+            if (dx * dx + dz * dz < (PATH.size() > 1 ? 0.42 : 0.1) && above > -1.7 && (above < 0.6 || !player.isOnGround() && above < 1.7)) {
                 PATH.remove(0);
             } else {
                 break;
@@ -498,8 +510,72 @@ public final class PilotClient {
             }
         }
 
+        // Deep water with a way to go across it is swum the way anyone swims a lake: head under, flat out in the water
+        // and at a run, which is two and a half times as fast as treading along the top. Up for air when it runs low.
+        Float swim = null;
+        boolean swimJump = false;
+        boolean swimDive = false;
+        if (swimOff > 0) {
+            swimOff--;
+        }
+
+        if (go != null && target == null && breakPos == null && look == null && player.isTouchingWater() && !player.hasVehicle() && swimOff <= 0
+            && (flags & (SNEAK | USE | BAG | CLICK | DROP | JUMP)) == 0 && player.getHungerManager().getFoodLevel() > 6) {
+            BlockPos at = player.getBlockPos();
+            Vec3d end = PATH.get(PATH.size() - 1);
+            double ex = end.x - player.getX();
+            double ez = end.z - player.getZ();
+            boolean deep = wet(client, at) && (wet(client, at.down()) || wet(client, at.up()) || player.isSwimming());
+            boolean on = wet(client, BlockPos.ofFloored(go.x, player.getY(), go.z)) || wet(client, BlockPos.ofFloored(go.x, go.y, go.z)) || wet(client, BlockPos.ofFloored(go.x, go.y - 1.0, go.z));
+            if (deep && on && ex * ex + ez * ez > 9.0) {
+                if (player.getAir() < 100) {
+                    breathe = true;
+                } else if (player.getAir() > 250) {
+                    breathe = false;
+                }
+
+                BlockPos.Mutable top = at.mutableCopy();
+                int over = 0;
+
+                while (over < 5 && wet(client, top)) {
+                    top.move(net.minecraft.util.math.Direction.UP);
+                    over++;
+                }
+
+                if (breathe || player.horizontalCollision) {
+                    swim = -25.0F;
+                    swimJump = true;
+                    swimDip = 0;
+                } else if (!player.isSwimming() && !player.isSubmergedInWater()) {
+                    // Still head out: she stops treading and ducks under, which is the crouch key in water.
+                    swim = 25.0F;
+                    swimDive = true;
+                    if (++swimDip > 40) {
+                        swimOff = 120;
+                        swimDip = 0;
+                        swim = null;
+                        swimDive = false;
+                    }
+                } else {
+                    // Just under the top, level.
+                    swimDip = 0;
+                    swim = (float)MathHelper.clamp((player.getY() - ((double)top.getY() - 0.95)) * 45.0, -30.0, 30.0);
+                }
+            }
+        }
+
+        if (swim == null) {
+            swimDip = 0;
+            breathe = false;
+        }
+
         Vec3d aim = null;
-        if (target != null) {
+        if (swim != null) {
+            double dx = go.x - player.getX();
+            double dz = go.z - player.getZ();
+            double flat = Math.max(0.6, Math.sqrt(dx * dx + dz * dz));
+            aim = new Vec3d(player.getX() + dx / flat * 4.0, player.getEyeY() - Math.tan(Math.toRadians((double)swim)) * 4.0, player.getZ() + dz / flat * 4.0);
+        } else if (target != null) {
             aim = target.getPos().add(offX, (double)target.getHeight() * (0.55 + offY), offX);
         } else if (breakPos != null) {
             aim = look != null ? look : Vec3d.ofCenter(breakPos);
@@ -543,6 +619,26 @@ public final class PilotClient {
             jump = true;
         }
 
+        if (swim != null) {
+            forward = 1.0F;
+            sideways = 0.0F;
+            jump = swimJump;
+            sneak = swimDive;
+        }
+
+        // Struck, with her feet still on the ground and his blow already throwing her back: a jump at a run in that
+        // same instant, towards him. The push a running jump gives goes against the throw of the blow, so she comes
+        // down a step nearer than he meant her to, and what she lands on the way down is the heavy blow. Players call
+        // it a jump reset; it is three keys pressed at the right moment and nothing else.
+        boolean reset = (flags & DUEL) != 0 && (flags & (SNEAK | HOLD | KITE | USE)) == 0 && target != null && go == null && player.hurtTime >= 9 && player.isOnGround()
+            && player.getVelocity().y > 0.2 && !player.isTouchingWater() && !player.isUsingItem() && player.distanceTo(target) < 5.0F
+            && player.getHungerManager().getFoodLevel() > 6 && footing(player, 1.0F, 0.0F);
+        if (reset) {
+            jump = true;
+            forward = 1.0F;
+            sideways = 0.0F;
+        }
+
         if ((flags & LEAP) != 0 && go != null && player.isOnGround() && forward > 0.0F) {
             // Off the last of the floor: the foot leaves it and she is in the air.
             double gx = go.x - player.getX();
@@ -575,8 +671,18 @@ public final class PilotClient {
                     holdFor = 50 + player.getRandom().nextInt(40);
                 }
 
-                sideways = (float)holdSide;
-                forward = (flags & KITE) != 0 ? -1.0F : (near > ((flags & FEINT) != 0 ? 6.0 : 3.9) ? 1.0F : (near < 3.4 ? -1.0F : 0.0F));
+                if ((flags & KITE) != 0 || (flags & FEINT) != 0) {
+                    sideways = 0.0F;
+                    forward = (flags & KITE) != 0 ? -1.0F : 0.0F;
+                } else if ((flags & USE) != 0) {
+                    // Behind her own shield she stands where his blow will have to come: no going round, she is too slow for it.
+                    sideways = 0.0F;
+                    forward = near > 3.8 ? 1.0F : (near < 3.1 ? -1.0F : 0.0F);
+                } else {
+                    // With no shield, out of a lunge's reach, and round him there.
+                    sideways = (float)holdSide;
+                    forward = near > 5.6 ? 1.0F : (near < 5.0 ? -1.0F : 0.0F);
+                }
             } else if (wtap > 0) {
                 // The sprint let go for a moment after a blow: the next one throws them back again.
                 wtap--;
@@ -646,6 +752,38 @@ public final class PilotClient {
             flown = false;
         }
 
+        if ((flags & DROP) != 0 && client.interactionManager != null) {
+            // Falling on purpose. The last blocks of a long fall pass in a tick or two, too quick to be told from the
+            // other side: the eyes go to the ground, and the moment it is in reach the bucket is emptied on it or the
+            // block set on it. Landed in what the bucket held, it is taken up again.
+            net.minecraft.item.ItemStack inHand = player.getMainHandStack();
+            boolean falling = !player.isOnGround() && !player.isTouchingWater() && player.getVelocity().y < -0.4;
+            boolean soaked = player.isTouchingWater() || player.inPowderSnow;
+            if (falling || soaked && inHand.isOf(net.minecraft.item.Items.BUCKET)) {
+                player.setPitch(90.0F);
+                if (dropWait > 0) {
+                    dropWait--;
+                } else if (falling && inHand.isOf(net.minecraft.item.Items.WATER_BUCKET)) {
+                    if (player.raycast(5.0, 1.0F, false).getType() == net.minecraft.util.hit.HitResult.Type.BLOCK) {
+                        client.interactionManager.interactItem(player, Hand.MAIN_HAND);
+                        player.swingHand(Hand.MAIN_HAND);
+                        dropWait = 6;
+                    }
+                } else if (falling && inHand.getItem() instanceof net.minecraft.item.BlockItem) {
+                    if (player.raycast(4.5, 1.0F, false) instanceof net.minecraft.util.hit.BlockHitResult ground && ground.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK && ground.getSide() == net.minecraft.util.math.Direction.UP) {
+                        client.interactionManager.interactBlock(player, Hand.MAIN_HAND, ground);
+                        player.swingHand(Hand.MAIN_HAND);
+                        dropWait = 6;
+                    }
+                } else if (soaked && inHand.isOf(net.minecraft.item.Items.BUCKET)) {
+                    client.interactionManager.interactItem(player, Hand.MAIN_HAND);
+                    dropWait = 5;
+                }
+            }
+        } else {
+            dropWait = 0;
+        }
+
         // In the air against a player, whether she jumped or was thrown up by his blow, the run is let go near the
         // top: what she lands on the way down is then the heavy blow.
         if (player.isOnGround() || (flags & (CRIT | DUEL)) == 0) {
@@ -655,6 +793,17 @@ public final class PilotClient {
         }
 
         boolean run = (flags & SPRINT) != 0 && forward > 0.0F && !player.isUsingItem() && player.getHungerManager().getFoodLevel() > 6 && !critAir;
+        if (reset) {
+            run = true;
+        }
+
+        if (player.isTouchingWater() && !player.isSwimming()) {
+            // On top of water there is no running; under it, running is what swimming is.
+            run = swim != null && player.isSubmergedInWater();
+        } else if (player.isSwimming()) {
+            run = swim != null;
+        }
+
         if (run && (flags & HOP) != 0 && player.isOnGround() && player.isSprinting() && sideways == 0.0F && !player.isTouchingWater() && !player.hasVehicle()) {
             jump = true;
         }

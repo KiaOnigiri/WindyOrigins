@@ -9,32 +9,32 @@ import java.util.Locale;
  */
 public enum HostCommand {
     // Page one: things done to an enemy.
-    OVERLOAD(13, 160, true),
-    VIRUS(14, 400, true),
-    BLIND(10, 320, true),
-    IMPULSE(8, 160, true),
-    PUPPET(20, 900, true),
-    SIPHON(15, 500, true),
-    SWAP(11, 400, true),
-    GRAVITY(16, 600, false),
+    OVERLOAD(28, 160, true),
+    VIRUS(30, 400, true),
+    BLIND(22, 320, true),
+    IMPULSE(18, 160, true),
+    PUPPET(45, 900, true),
+    SIPHON(32, 500, true),
+    SWAP(25, 400, true),
+    GRAVITY(35, 600, false),
     // Page two: tricks with space, time and the Host's own skin.
-    DECOY(13, 600, false),
-    TURRET(18, 900, false),
-    SHIELD(14, 600, false),
-    TIMEWARP(18, 1200, false),
-    REWIND(16, 800, false),
-    BLINK(13, 240, false),
-    REPAIR(17, 1500, false),
-    SCAN(8, 400, false),
+    DECOY(28, 600, false),
+    TURRET(40, 900, false),
+    SHIELD(30, 600, false),
+    TIMEWARP(40, 1200, false),
+    REWIND(35, 800, false),
+    BLINK(28, 240, false),
+    REPAIR(38, 1500, false),
+    SCAN(18, 400, false),
     // Page three: chores.
-    MAGNET(5, 240, false),
-    TOGGLE(4, 20, false),
-    LIGHT(8, 400, false),
-    DIG(13, 400, false),
-    BUILD(13, 400, false),
-    HARVEST(15, 500, false),
-    FIND(7, 160, false),
-    FETCH(9, 300, false),
+    MAGNET(12, 240, false),
+    TOGGLE(8, 20, false),
+    LIGHT(18, 400, false),
+    DIG(28, 400, false),
+    BUILD(28, 400, false),
+    HARVEST(32, 500, false),
+    FIND(15, 160, false),
+    FETCH(20, 300, false),
     QUIET(0, 0, false),
     STOP(0, 0, false),
     STATUS(0, 0, false),
@@ -51,8 +51,18 @@ public enum HostCommand {
     public final int cooldown;
     public final boolean targeted;
 
+    /**
+     * What the table above says a request costs is what it cost up to 1.13.1. All of it is dearer now by this
+     * much in the hundred: the table is kept as it was and the sum is done here.
+     */
+    public static final int DEARER = 115;
+
+    public static int dearer(int heat) {
+        return (heat * 115 + 50) / 100;
+    }
+
     private HostCommand(int heat, int cooldown, boolean targeted) {
-        this.heat = heat;
+        this.heat = (heat * 115 + 50) / 100;
         this.cooldown = cooldown;
         this.targeted = targeted;
     }

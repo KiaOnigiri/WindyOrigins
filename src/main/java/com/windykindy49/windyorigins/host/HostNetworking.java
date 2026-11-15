@@ -190,6 +190,30 @@ public final class HostNetworking {
         ServerPlayNetworking.send(var0, FX, var8);
     }
 
+    /** One of the Host's effects that stands in the world, sent to everyone else near enough to see it. */
+    public static void shown(ServerPlayerEntity host, int kind, Vec3d at, int color, int ticks) {
+        for (ServerPlayerEntity other : host.getServerWorld().getPlayers()) {
+            if (other == host || other.squaredDistanceTo(at) > 96.0 * 96.0 || !com.windykindy49.windyorigins.common.PhaseFx.samePhase(other, host)) {
+                continue;
+            }
+
+            PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+            buf.writeByte(kind);
+            buf.writeByte(0);
+            buf.writeInt(host.getId());
+            buf.writeInt(-1);
+            buf.writeDouble(at.x);
+            buf.writeDouble(at.y);
+            buf.writeDouble(at.z);
+            buf.writeDouble(at.x);
+            buf.writeDouble(at.y);
+            buf.writeDouble(at.z);
+            buf.writeInt(color);
+            buf.writeVarInt(ticks);
+            ServerPlayNetworking.send(other, FX, buf);
+        }
+    }
+
     public static void cast(ServerPlayerEntity var0, int var1, int var2) {
         PacketByteBuf var3 = new PacketByteBuf(Unpooled.buffer());
         var3.writeVarInt(var1);
