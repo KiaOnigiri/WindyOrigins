@@ -120,6 +120,12 @@ public final class Pilot {
     private static final int KITE = 16384;
     /** What is set down comes out of the off hand: the main hand keeps its weapon and its ready arm. */
     private static final int OFFHAND = 32768;
+    /** The next blow is to be a jump into it: off the ground in time to be coming down when the arm is ready, and not at a run. */
+    private static final int CRIT = 65536;
+    /** Eyes on him and the arm held: he is behind a shield that would take the blow and leave her open after it. */
+    private static final int HOLD = 131072;
+    /** Out of a fight with a player a point of heat takes thirty ticks, not nine and a half: two and a quarter minutes from cold to letting go. */
+    static final int HEAT_PEACE = 60;
     /**
      * Two points of heat in this many ticks while she works, one while she only holds the body and waits: with
      * what taking it costs, a cold chip is at a hundred in forty-five seconds of work.
@@ -239,6 +245,10 @@ public final class Pilot {
         int lastWay;
         /** His blow has just gone by and her arm is ready: the shield down and hers in, before his is ready again. */
         boolean counter;
+        /** When she last had a player to fight. */
+        int duelAt = -1000;
+        /** How long the creeper in front of her has been hissing: it goes off at thirty. */
+        int fuse;
         /** How long she has stood behind the shield with him in reach and not swinging. */
         int guardFor;
         float hostHealth;
@@ -646,7 +656,9 @@ public final class Pilot {
         }
 
         run.ticks++;
-        if (run.ticks * 2 % (run.task == null || run.task.resting() ? HEAT_EVERY * 2 : HEAT_EVERY) < 2) {
+        // A fight with a player is what cooks the chip; any other work it bears three times as long.
+        boolean pvp = run.ticks - run.duelAt < 100;
+        if (run.ticks * 2 % ((pvp ? HEAT_EVERY : HEAT_PEACE) * (run.task == null || run.task.resting() ? 2 : 1)) < 2) {
             if (HostManager.heat(host) >= HEAT_STOP) {
                 // The chip is about to cook: she lets go by herself and remembers where she was.
                 release(host, remember(host) ? "pilot_hot_stop" : "pilot_hot");
@@ -671,7 +683,7 @@ public final class Pilot {
         run.label = run.task == null ? L_HOLD : run.task.label();
         LivingEntity threat = threat(host);
         float low = Math.max(6.0F, host.getMaxHealth() * 0.3F);
-        if (run.task != null && host.getHealth() <= 3.0F && (threat != null || host.isOnFire())) {
+        if (run.task != null && host.getHealth() <= 3.0F && (threat != null || host.isOnFire()) && !pvp) {
             // She is losing this one for good: better the Host's own hands than a dead Host.
             remember(host);
             release(host, "pilot_hurt");
@@ -679,7 +691,11 @@ public final class Pilot {
         }
 
         LivingEntity danger = run.task == null ? null : danger(host);
-        if (danger != null && host.getHealth() <= low) {
+        if (danger instanceof PlayerEntity || pvp) {
+            // Nobody turns a back on a player to eat: he is as fast as the body is, and a back is all he needs.
+            run.retreat = false;
+            run.retreatTicks = 0;
+        } else if (danger != null && host.getHealth() <= low) {
             run.retreat = true;
         } else if (danger == null || host.getHealth() > low + 5.0F) {
             run.retreat = false;
@@ -3143,6 +3159,7 @@ public final class Pilot {
             run.foeSpeed = Vec3d.ZERO;
             run.apart = 0;
             run.noWay = false;
+            run.fuse = 0;
         } else {
             run.foeSpeed = run.foeSpeed.multiply(0.6).add(foe.getPos().subtract(run.foeWas).multiply(0.4));
             run.foeWas = foe.getPos();
@@ -3274,13 +3291,17 @@ public final class Pilot {
                 return;
             }
 
-            // A golden apple is eaten while there is still something to save, and begun when he is furthest from
-            // getting a blow in: far off, or just thrown back with his arm spent. Once begun it is finished: an
-            // apple half eaten is a second lost for nothing.
-            boolean biting = host.isUsingItem() && host.getActiveItem().isFood();
+            // Eating takes a second and a half, and a player covers a dozen blocks in that. She eats only when he
+            // cannot be on her before she is done: far enough off at the best pace a player makes, the further for a
+            // web he is caught in or a meal of his own, or with no way to her at all. If he turns out quicker than
+            // that she stops with the mouth full and fights: an apple half eaten is better than a blow taken eating.
+            boolean biting = host.isUsingItem() && (host.getActiveItem().isFood() || host.getActiveItem().isOf(Items.POTION));
             boolean hurt = host.getHealth() <= host.getMaxHealth() * 0.6F && !host.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION);
-            if ((biting || hurt && (run.strikeIn >= 14 && away > 6.0 || away > 9.0 || away > 4.0 && webbed(foe))) && carries(host, stack -> stack.isOf(Items.GOLDEN_APPLE) || stack.isOf(Items.ENCHANTED_GOLDEN_APPLE))) {
-                int apple = equip(host, stack -> stack.isOf(Items.ENCHANTED_GOLDEN_APPLE) ? 2.0 : (stack.isOf(Items.GOLDEN_APPLE) ? 1.0 : 0.0));
+            int eta = run.noWay ? 999 : (int)(Math.max(0.0, away - 3.3) / Math.max(0.36, run.foeClosing)) + (webbed(foe) ? 13 : 0)
+                + (foe.isUsingItem() && foe.getActiveItem().isFood() ? foe.getItemUseTimeLeft() : 0);
+            boolean time = eta >= (biting ? host.getItemUseTimeLeft() : 32) + 3;
+            if ((biting || hurt) && time && carries(host, stack -> aidWorth(stack) > 0.0)) {
+                int apple = equip(host, stack -> stack.isOf(Items.ENCHANTED_GOLDEN_APPLE) ? 1000.0 : (stack.isOf(Items.GOLDEN_APPLE) ? 500.0 : aidWorth(stack)));
                 run.slot = apple;
                 run.attackId = -1;
                 run.way.clear();
@@ -3299,7 +3320,8 @@ public final class Pilot {
             return;
         }
 
-        if (duel) {
+        // A creature on its feet that she cannot get to is got to the same way a player is. Not what flies.
+        if (duel || foe.isOnGround() && !(foe instanceof net.minecraft.entity.mob.FlyingEntity) && !(foe instanceof net.minecraft.entity.Flutterer) && !(foe instanceof CreeperEntity)) {
             run.apart = sees && away <= 3.6 ? 0 : run.apart + 1;
             if (run.apart <= 50) {
                 run.noWay = false;
@@ -3315,7 +3337,8 @@ public final class Pilot {
         // An axe for as long as he fights from behind a shield, not for as long as it happens to be up: every change
         // of what is in the hand sets the arm back to nothing.
         boolean hisShield = foe.getOffHandStack().getItem() instanceof net.minecraft.item.ShieldItem || foe.getMainHandStack().getItem() instanceof net.minecraft.item.ShieldItem;
-        boolean guarded = duel ? hisShield && run.ticks - run.guardSeenAt < 200 : foe.isBlocking();
+        boolean hisDown = foe instanceof PlayerEntity player && player.getItemCooldownManager().isCoolingDown(Items.SHIELD);
+        boolean guarded = duel ? hisShield && !hisDown && run.ticks - run.guardSeenAt < 200 : foe.isBlocking();
         // Blade to blade in the open, each blow throws the two of them apart and it is a second before they meet again:
         // what counts then is how hard one blow lands, not how many the arm could manage. From behind a shield, where
         // she answers every blow of his, it is the quick weapon again.
@@ -3338,17 +3361,25 @@ public final class Pilot {
             return worth;
         });
         run.attackId = foe.getId();
-        if (crowd) {
-            // Feet on the ground for a sweep: no jumping into the blow.
+        if (crowd || foe instanceof CreeperEntity) {
+            // Feet on the ground for a sweep: no jumping into the blow. Nor at a creeper: the jump takes longer than the hiss allows.
             run.flags |= SWEEP;
         }
 
         if (duel) {
-            // Against a player the blow goes in from the ground, at a run, the moment the arm is ready: it is the run
-            // behind it that throws him out of reach, and a blow held back for a jump is a blow he gets in first.
-            run.flags |= SWEEP;
+            run.duelAt = run.ticks;
             boolean cover = shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
             int mine = Math.max(0, (int)Math.ceil((double)((0.95F - host.getAttackCooldownProgress(0.0F)) * host.getAttackCooldownProgressPerTick())));
+            // Two blows. From the ground at a run, the moment the arm is ready: it is the run behind it that throws him
+            // out of reach. Or a jump into it, landed on the way down, which is half as much harm again but takes
+            // seven ticks off the ground and is not at a run. The jump whenever his own blow cannot come first: he is
+            // behind her shield's reach, his arm is spent, he is eating, he is in a web. The run otherwise.
+            int air = Math.max(mine, 7);
+            boolean leap = !foe.isBlocking() && !host.isTouchingWater() && !host.isClimbing() && !webbed(host)
+                && (cover || run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem()
+                    // And when his blow is coming first whatever she does, with nothing to stand behind: then hers had better be the heavy one.
+                    || !cover && run.strikeIn <= mine && away < 6.0);
+            run.flags |= leap ? CRIT : SWEEP;
             if (host.getAttackCooldownProgress(0.0F) >= 0.9F && (run.strikeIn >= 4 || !cover) || !cover && mine <= run.strikeIn + 2) {
                 // Her arm is ready: straight in, no circling. Each sees the other a moment late, so of two who close
                 // it is the one still coming on who gets the blow in first, and the one who slows who takes it.
@@ -3356,20 +3387,27 @@ public final class Pilot {
             }
         }
 
+        run.fuse = foe instanceof CreeperEntity hissing ? (hissing.getFuseSpeed() > 0 ? run.fuse + 1 : Math.max(0, run.fuse - 2)) : 0;
         if (shielded(host) && sees) {
             // The shield goes up at what shoots, at a creeper about to go off, and between one swing and the next.
             // Up while the bow is drawn at her; down, and in at a run, while it is being nocked again.
             boolean shoots = foe instanceof net.minecraft.entity.ai.RangedAttackMob && away > 2.5 && (foe.isUsingItem() || !(foe instanceof MobEntity));
-            boolean fuse = foe instanceof CreeperEntity creeper && creeper.getFuseSpeed() > 0;
+            boolean fuse = foe instanceof CreeperEntity && run.fuse >= 18 && away < 6.0;
             // Against a player it goes up for the blow he is about to land while her own arm is not ready, and comes
             // down the moment it is: his blade on the shield, hers on him.
             // A player she meets shield first: up for the blow he is about to land, whatever her own arm is doing,
             // since he sees her a moment sooner than she sees him. Down the instant his blow has gone by, hers in
             // while his arm is still coming back, and up again. If he stands there and will not swing, she does.
-            boolean poke = run.guardFor > 30;
+            boolean poke = run.guardFor > 30 && !foe.isBlocking();
             boolean between = duel
                 ? run.strikeIn <= 12 && away < 9.0 && !run.counter && !poke && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
                 : away < 3.8 && host.getAttackCooldownProgress(0.0F) < 0.7F;
+            if (duel && foe.isBlocking() && host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem && host.getAttackCooldownProgress(0.0F) >= 0.9F) {
+                // The axe is in her hand and his shield is up: her own comes down and the axe goes in. Behind a shield he cannot strike first.
+                between = false;
+                run.flags |= PRESS;
+            }
+
             run.guardFor = duel && between && away < 3.6 ? run.guardFor + 1 : (poke && run.guardFor < 38 ? run.guardFor + 1 : 0);
             if (duel && (run.counter || poke)) {
                 run.flags |= PRESS;
@@ -3388,14 +3426,29 @@ public final class Pilot {
             return;
         }
 
-        if (foe instanceof CreeperEntity creeper && creeper.getFuseSpeed() > 0 && away < 7.0) {
-            // About to go off: nobody stands there swinging.
-            Vec3d back = away(host, host.getPos().subtract(foe.getPos()), 5.0);
-            if (back != null) {
-                run.attackId = -1;
-                run.way.add(back);
-                run.flags |= SPRINT;
-                return;
+        if (foe instanceof CreeperEntity creeper && creeper.getFuseSpeed() > 0 && away < 8.0) {
+            // It hisses for a second and a half before it goes off, and that is time for a blow. She used to back off
+            // at the first hiss, it calmed, she came back, and so round for ever. Now: with the arm ready and the hiss
+            // young she strikes, at a run so that it is thrown back, and then gets clear until it calms. A shield is
+            // for when she cannot get clear in time.
+            boolean guard = shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
+            boolean ready = host.getAttackCooldownProgress(0.0F) >= 0.9F;
+            if (run.fuse >= 12 || !ready) {
+                Vec3d back = away(host, host.getPos().subtract(foe.getPos()), 7.0);
+                if (guard && (back == null || run.fuse >= 18 && away < 6.0)) {
+                    // No getting clear in time, or nowhere to go: the shield takes it.
+                    run.attackId = -1;
+                    run.look = foe.getEyePos();
+                    run.flags |= USE;
+                    return;
+                }
+
+                if (back != null) {
+                    run.attackId = -1;
+                    run.way.add(back);
+                    run.flags |= SPRINT;
+                    return;
+                }
             }
         }
 
@@ -3408,6 +3461,32 @@ public final class Pilot {
             run.flags &= ~PRESS;
             run.flags |= KITE | DUEL;
             return;
+        }
+
+        if (duel && foe.isBlocking() && !(host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem)) {
+            // He stands behind his shield and waits for her blade to bounce off it: for the half second after a blow
+            // her arm is spent and her own shield is not yet up, and that is when he strikes. So she does not give it
+            // to him. No axe to knock the shield down with: she keeps her blow, her own shield up, a step out of his
+            // reach, and strikes the moment his comes down, which it must before he can do anything at all.
+            Vec3d front = host.getPos().subtract(foe.getPos()).multiply(1.0, 0.0, 1.0);
+            if (front.lengthSquared() < 0.01 || foe.getRotationVec(1.0F).multiply(1.0, 0.0, 1.0).dotProduct(front) > 0.0) {
+                run.flags |= HOLD | DUEL;
+                run.flags &= ~PRESS;
+                if (away < 3.4 && room) {
+                    run.flags |= KITE;
+                    return;
+                }
+            }
+        }
+
+        if (!duel && crowd && !(foe instanceof CreeperEntity)) {
+            // Several on her at once. A blow, and a step back while the arm comes round, eyes on them: they string out
+            // in front of her, where a sword sweeps and a shield covers, and none of them gets behind.
+            run.flags |= DUEL;
+            if (room && away < 3.0 && host.getAttackCooldownProgress(0.0F) < 0.8F) {
+                run.flags |= KITE;
+                return;
+            }
         }
 
         int late = (int)Math.ceil((double)((0.95F - host.getAttackCooldownProgress(0.0F)) * host.getAttackCooldownProgressPerTick())) - run.strikeIn;
@@ -3926,6 +4005,21 @@ public final class Pilot {
                 }
 
                 return true;
+            }
+
+            if (run.ticks % 10 == 3 && this.foe != null && !(this.foe instanceof PlayerEntity)) {
+                // Of those within the arm's reach, the one nearest its end: one fewer on her the sooner.
+                LivingEntity weak = null;
+
+                for (MobEntity mob : host.getWorld().getEntitiesByClass(MobEntity.class, host.getBoundingBox().expand(3.6, 2.0, 3.6), x -> x.isAlive() && x.getTarget() == host && host.canSee(x) && !(x instanceof CreeperEntity))) {
+                    if (weak == null || mob.getHealth() < weak.getHealth()) {
+                        weak = mob;
+                    }
+                }
+
+                if (weak != null && weak != this.foe && (this.foe.squaredDistanceTo(host) > 16.0 || weak.getHealth() < this.foe.getHealth() - 2.0F)) {
+                    this.foe = weak;
+                }
             }
 
             if (run.ticks % 5 == 0 && (this.foe == null || run.ticks % 20 == 0 && this.foe.squaredDistanceTo(host) > 16.0)) {

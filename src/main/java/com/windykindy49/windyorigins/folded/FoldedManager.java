@@ -52,10 +52,10 @@ import net.minecraft.registry.RegistryKeys;
 
 public final class FoldedManager {
     public static final String FOLD = "fold";
-    public static final int SHOT_COST = 45;
-    public static final int STEP_COST = 40;
-    public static final int KNOT_COST = 25;
-    public static final int KNOT_REFUND = 15;
+    public static final int SHOT_COST = 18;
+    public static final int STEP_COST = 16;
+    public static final int KNOT_COST = 10;
+    public static final int KNOT_REFUND = 6;
     public static final int HOVER_MIN = 10;
     /** Pierces armour outright; Protection still applies, so full netherite Protection IV falls in three shots. */
     public static final float SHOT_DAMAGE = 19.0F;
@@ -423,10 +423,10 @@ public final class FoldedManager {
 
     public static void step(ServerPlayerEntity var0) {
         int var1 = Powers.resource(var0, "fold", 0);
-        if (var1 < 40) {
+        if (var1 < STEP_COST) {
             PhaseFx.privateSound(var0, WindySounds.DENY, 0.5F, 1.3F);
         } else {
-            Powers.setResource(var0, "fold", var1 - 40);
+            Powers.setResource(var0, "fold", var1 - STEP_COST);
             var0.addStatusEffect(new StatusEffectInstance(WindyEffects.FOLDED, 30, 0, false, false, true));
             var0.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 30, 0, false, false, false));
 

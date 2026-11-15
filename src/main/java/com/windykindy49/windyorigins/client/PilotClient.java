@@ -47,6 +47,10 @@ public final class PilotClient {
     public static final int FLY = 2048;
     public static final int DUEL = 4096;
     public static final int OFFHAND = 32768;
+    public static final int CRIT = 65536;
+    public static final int HOLD = 131072;
+    /** Up for a blow on the way down: the run is let go near the top of the jump, since a blow at a run is never the heavy one. */
+    private static boolean critAir;
     /** In a duel: straight at him, no circling. */
     public static final int PRESS = 8192;
     /** In a duel: backwards out of his reach, eyes still on him. */
@@ -586,7 +590,15 @@ public final class PilotClient {
             flown = false;
         }
 
-        boolean run = (flags & SPRINT) != 0 && forward > 0.0F && !player.isUsingItem() && player.getHungerManager().getFoodLevel() > 6;
+        // In the air against a player, whether she jumped or was thrown up by his blow, the run is let go near the
+        // top: what she lands on the way down is then the heavy blow.
+        if (player.isOnGround() || (flags & (CRIT | DUEL)) == 0) {
+            critAir = false;
+        } else if (player.getVelocity().y < 0.12) {
+            critAir = true;
+        }
+
+        boolean run = (flags & SPRINT) != 0 && forward > 0.0F && !player.isUsingItem() && player.getHungerManager().getFoodLevel() > 6 && !critAir;
         if (run && (flags & HOP) != 0 && player.isOnGround() && player.isSprinting() && sideways == 0.0F && !player.isTouchingWater() && !player.hasVehicle()) {
             jump = true;
         }
@@ -741,21 +753,40 @@ public final class PilotClient {
         boolean on = hit instanceof EntityHitResult entity && entity.getEntity() == target || aimed(player, target);
         float ready = player.getAttackCooldownProgress(0.0F);
         boolean sweep = (flags & SWEEP) != 0;
-        if (!sweep && on && ready > 0.8F && ready < 1.0F && player.isOnGround() && !player.isTouchingWater() && (double)player.distanceTo(target) < 3.4) {
+        boolean leap = (flags & CRIT) != 0;
+        if (leap) {
+            // Timed, not waited for: seven ticks from the ground to coming down, so she leaves it seven ticks before
+            // the arm is ready, or at once when it is ready already, and near enough to be in reach when she lands.
+            float left = (1.0F - ready) * player.getAttackCooldownProgressPerTick();
+            if (player.isOnGround() && !player.isTouchingWater() && left <= 7.0F && (double)player.distanceTo(target) < 5.2) {
+                critJump = true;
+            }
+        } else if (!sweep && on && ready > 0.8F && ready < 1.0F && player.isOnGround() && !player.isTouchingWater() && (double)player.distanceTo(target) < 3.4) {
             critJump = true;
         }
 
         // A crystal goes off at a touch; a player is struck the moment the arm is all but ready, not a moment after.
         boolean duel = (flags & DUEL) != 0;
         boolean crystal = target instanceof net.minecraft.entity.decoration.EndCrystalEntity;
-        if (!crystal && ready < (duel ? 0.95F : 1.0F) || client.interactionManager == null || player.isUsingItem()) {
+        if ((flags & HOLD) != 0 && !crystal) {
+            return;
+        }
+
+        // The full of the arm, and a tick over for the server, which counts it a moment behind: a blow a twentieth
+        // short of full does a tenth less harm, and over a fight that is one blow more to land.
+        if (!crystal && (duel ? player.getAttackCooldownProgress(-1.0F) < 1.0F : ready < 1.0F) || client.interactionManager == null || player.isUsingItem()) {
             return;
         }
 
         boolean falling = !player.isOnGround() && player.getVelocity().y < -0.05;
+        if (leap) {
+            // The heavy blow is one the server agrees she is falling for, and not at a run.
+            falling = !player.isOnGround() && player.fallDistance > 0.0F && !player.isSprinting();
+        }
+
         if (swingWait > 0) {
             swingWait--;
-        } else if (on && (sweep || falling || ++critWait > 5)) {
+        } else if (on && (sweep || falling || ++critWait > (leap ? 11 : 5))) {
             client.interactionManager.attackEntity(player, target);
             player.swingHand(Hand.MAIN_HAND);
             critWait = 0;
