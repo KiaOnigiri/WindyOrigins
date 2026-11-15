@@ -2067,12 +2067,12 @@ public final class HostManager {
         return var0.getServer().getPlayerManager().getPlayer(var1.trim()) != null;
     }
 
-    private static final int SEARCH_PLAYER = 12;
-    private static final int SEARCH_PLAIN = 10;
-    private static final int SEARCH_COMMON = 16;
-    private static final int SEARCH_UNCOMMON = 22;
-    private static final int SEARCH_RARE = 30;
-    private static final int SEARCH_LEGENDARY = 36;
+    private static final int SEARCH_PLAYER = 14;
+    private static final int SEARCH_PLAIN = 11;
+    private static final int SEARCH_COMMON = 18;
+    private static final int SEARCH_UNCOMMON = 25;
+    private static final int SEARCH_RARE = 34;
+    private static final int SEARCH_LEGENDARY = 41;
 
     /**
      * What looking through the ground for something costs the chip, in heat. The rarer the thing, the

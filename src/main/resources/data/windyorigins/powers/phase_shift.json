@@ -21,7 +21,7 @@
           {
             "type": "origins:food_level",
             "comparison": ">=",
-            "compare_to": 3
+            "compare_to": 6
           }
         ]
       }
@@ -45,7 +45,7 @@
             },
             {
               "type": "origins:feed",
-              "food": -3,
+              "food": -6,
               "saturation": -20.0
             }
           ]

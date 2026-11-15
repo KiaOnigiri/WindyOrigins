@@ -49,6 +49,39 @@ public final class PilotClient {
     public static final int OFFHAND = 32768;
     public static final int CRIT = 65536;
     public static final int HOLD = 131072;
+    /** Whether there is ground to stand on a step that way: forward and sideways as the keys have them, turned by where she faces. */
+    private static boolean footing(ClientPlayerEntity player, float forward, float sideways) {
+        double yaw = Math.toRadians((double)player.getYaw());
+        double dx = (double)sideways * Math.cos(yaw) - (double)forward * Math.sin(yaw);
+        double dz = (double)forward * Math.cos(yaw) + (double)sideways * Math.sin(yaw);
+
+        for (double far : new double[]{0.8, 1.6}) {
+            net.minecraft.util.math.BlockPos at = net.minecraft.util.math.BlockPos.ofFloored(player.getX() + dx * far, player.getY() + 0.2, player.getZ() + dz * far);
+            boolean ground = false;
+
+            for (int down = 0; down <= 2 && !ground; down++) {
+                net.minecraft.util.math.BlockPos under = at.down(down + 1);
+                net.minecraft.block.BlockState state = player.getWorld().getBlockState(under);
+                if (!player.getWorld().getFluidState(under.up()).isEmpty() && player.getWorld().getFluidState(under.up()).isIn(net.minecraft.registry.tag.FluidTags.LAVA)
+                    || state.isOf(net.minecraft.block.Blocks.MAGMA_BLOCK) || state.isOf(net.minecraft.block.Blocks.CACTUS) || state.getBlock() instanceof net.minecraft.block.AbstractFireBlock) {
+                    return false;
+                }
+
+                ground = !state.getCollisionShape(player.getWorld(), under).isEmpty();
+            }
+
+            if (!ground) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static final int FEINT = 262144;
+    /** Which way round a raised shield, and for how long yet. */
+    private static int holdSide = 1;
+    private static int holdFor;
     /** Up for a blow on the way down: the run is let go near the top of the jump, since a blow at a run is never the heavy one. */
     private static boolean critAir;
     /** In a duel: straight at him, no circling. */
@@ -535,7 +568,16 @@ public final class PilotClient {
                 sideways = (float)strafe;
             }
 
-            if (wtap > 0) {
+            if ((flags & HOLD) != 0) {
+                // Round a raised shield, a step beyond his reach, one way for a good while: it covers only what is in front of it.
+                if (--holdFor <= 0) {
+                    holdSide = -holdSide;
+                    holdFor = 50 + player.getRandom().nextInt(40);
+                }
+
+                sideways = (float)holdSide;
+                forward = (flags & KITE) != 0 ? -1.0F : (near > ((flags & FEINT) != 0 ? 6.0 : 3.9) ? 1.0F : (near < 3.4 ? -1.0F : 0.0F));
+            } else if (wtap > 0) {
                 // The sprint let go for a moment after a blow: the next one throws them back again.
                 wtap--;
                 forward = 0.0F;
@@ -545,6 +587,20 @@ public final class PilotClient {
             } else if (near > ((flags & PRESS) != 0 ? 1.3 : 2.3)) {
                 // Pressing, she is still moving in when the blow lands: it is the run that throws him back.
                 forward = 1.0F;
+            }
+            // Never a step to the side or backwards onto nothing, or into fire: the eyes are on him, not on the ground.
+            if (sideways != 0.0F && !footing(player, 0.0F, sideways)) {
+                if (footing(player, 0.0F, -sideways)) {
+                    sideways = -sideways;
+                    strafe = -strafe;
+                    holdSide = -holdSide;
+                } else {
+                    sideways = 0.0F;
+                }
+            }
+
+            if (forward < 0.0F && !footing(player, forward, 0.0F)) {
+                forward = 0.0F;
             }
         } else {
             wtap = 0;
@@ -768,6 +824,13 @@ public final class PilotClient {
         // A crystal goes off at a touch; a player is struck the moment the arm is all but ready, not a moment after.
         boolean duel = (flags & DUEL) != 0;
         boolean crystal = target instanceof net.minecraft.entity.decoration.EndCrystalEntity;
+        if ((flags & FEINT) != 0 && !crystal && !player.isUsingItem() && ready >= 1.0F) {
+            // A blow at the air, meant to be seen: the arm is as spent after it as after any other.
+            player.swingHand(Hand.MAIN_HAND);
+            player.resetLastAttackedTicks();
+            return;
+        }
+
         if ((flags & HOLD) != 0 && !crystal) {
             return;
         }
