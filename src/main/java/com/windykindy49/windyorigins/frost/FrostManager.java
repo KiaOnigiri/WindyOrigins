@@ -46,7 +46,7 @@ public final class FrostManager {
     public static final int CHILL_MAX = 100;
     public static final int COFFIN_TICKS = 100;
     public static final int COFFIN_MIN_CHILL = 20;
-    public static final int WALL_COST = 30;
+    public static final int WALL_COST = 12;
     private static final int WALL_TICKS = 300;
     private static final Map<UUID, Entity> COFFINS = new HashMap<>();
 
@@ -432,7 +432,7 @@ public final class FrostManager {
     }
 
     public static void wall(ServerPlayerEntity var0) {
-        if (chill(var0) < 30) {
+        if (chill(var0) < WALL_COST) {
             PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 1.2F);
             var0.sendMessage(Text.translatable("message.windyorigins.frost.too_warm", 30).formatted(Formatting.AQUA), true);
         } else {
@@ -457,7 +457,7 @@ public final class FrostManager {
             if (var5 == 0) {
                 PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 1.2F);
             } else {
-                Powers.addResource(var0, "chill", -30);
+                Powers.addResource(var0, "chill", -WALL_COST);
                 var1.playSound(null, var4, WindySounds.FROST_WALL, SoundCategory.BLOCKS, 1.0F, 0.9F);
                 var1.spawnParticles(
                     new BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.PACKED_ICE.getDefaultState()),

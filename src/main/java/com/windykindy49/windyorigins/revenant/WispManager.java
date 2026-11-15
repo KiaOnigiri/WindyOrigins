@@ -50,7 +50,7 @@ import net.minecraft.world.RaycastContext;
  * with whatever it gathered before resting a moment.
  */
 public final class WispManager {
-    public static final int COST = 3;
+    public static final int COST = 1;
     public static final int COUNT = 3;
     public static final int LIFETIME = 2400;
     public static final double REACH = 24.0;

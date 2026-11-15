@@ -66,13 +66,15 @@ teleporting: ore is looked for down a staircase, places on foot.
   and backwards, rows a boat (on ice too), rides your horse, takes rails in a minecart, flies
   your elytra on your rockets.
 - **Fights**: picks the weapon, shoots a bow or a crossbow, raises the shield, eats and backs off when hurt.
-  Against players she reads the other's attack bar, blocks and answers, takes an axe to a
-  shield, throws pearls and potions, sets cobwebs. One who climbs out of reach or walls himself
+  Against players she reads the other's attack bar, blocks and answers, jumps into her blows
+  when his cannot come first, takes an axe to a shield and never a blade, throws pearls and
+  potions, sets cobwebs. One who climbs out of reach or walls himself
   in gets an arrow, or has the block broken from under him.
 - **Several things in one breath**: "harvest the crops and put them in the chest", "kill Steve,
   then set the respawn point".
-- **The chip cooks in about 45 seconds of work.** She lets go just before it does and remembers
-  the job; "carry on" picks it up again. Any movement key takes the body back at once.
+- **The chip heats under her.** She holds the body for two and a quarter minutes of work, forty-five
+  seconds when she is fighting a player, lets go just before the chip cooks and remembers the job;
+  "carry on" picks it up again. Any movement key takes the body back at once.
 
 | | |
 |---|---|
