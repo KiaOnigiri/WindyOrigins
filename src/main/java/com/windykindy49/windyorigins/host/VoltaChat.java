@@ -24,6 +24,10 @@ public final class VoltaChat {
     public static final int FLAG_WALL = 2;
     public static final int FLAG_PULL = 4;
     public static final int FLAG_TALK = 8;
+    /** Said with a word that is only ever said of a tree: chop, fell. */
+    public static final int FLAG_CHOP = 16;
+    /** "All", "everything". */
+    public static final int FLAG_ALL = 32;
     private static final String[] NAME_STEMS = new String[]{"вольт", "volta", "wolta"};
     private static final String[] NAME_CJK = new String[]{"ヴォルタ", "ボルタ", "沃尔塔", "沃塔"};
     static final Map<HostCommand, String[]> VERBS = new LinkedHashMap<>();
@@ -741,6 +745,60 @@ public final class VoltaChat {
         return out.toString();
     }
 
+    /** Whether "all" or "everything" is among these words. */
+    public static boolean saysAll(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return false;
+        }
+
+        String text = normalize(subject);
+        String[] tokens = text.split(" ");
+
+        for (String word : FLAGS.get(FLAG_ALL)) {
+            if (find(text, tokens, word) >= 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static final String[] BOXES = new String[]{
+        "сундук", "бочк", "бочек", "бочон", "ящик", "контейнер", "хранилищ", "шалкер", "скрин", "chest", "barrel", "container", "storage", "shulker", "crate", "truhe",
+        "fass", "fasser", "kiste", "coffre", "tonneau", "cofre", "barril", "bau$", "baus$", "skrzyn", "beczk", "チェスト", "樽", "箱", "桶"
+    };
+    private static final java.util.Set<String> SMALL = java.util.Set.of(
+        "из", "с", "со", "от", "в", "во", "вокруг", "рядом", "ближайших", "ближайшего", "ближайшие", "из-под", "і", "із", "з", "зі", "from", "of", "out", "the", "in",
+        "near", "nearby", "nearest", "around", "aus", "der", "den", "dem", "de", "du", "des", "del", "los", "las", "da", "do", "dos", "das", "ze", "ich", "их", "них",
+        "them", "и", "and", "или", "or", "a", "le", "la", "les", "el"
+    );
+
+    /** Whether nothing is named here but chests and barrels: "from the chests", "из сундуков", or nothing at all. */
+    public static boolean onlyBoxes(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return true;
+        }
+
+        outer:
+        for (String token : loot(subject).split(" ")) {
+            if (token.isEmpty() || SMALL.contains(token)) {
+                continue;
+            }
+
+            String[] one = new String[]{token};
+
+            for (String word : BOXES) {
+                if (cjk(word) ? token.contains(word) : find(token, one, word) >= 0) {
+                    continue outer;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     /** What is left of the subject of a digging request once the directions and measures are out: the name of a block, or nothing. */
     public static String thing(String subject) {
         if (subject == null || subject.isBlank()) {
@@ -1031,6 +1089,14 @@ public final class VoltaChat {
         FLAGS.put(FLAG_PULL, new String[]{
             "притяни", "тяни", "тащи", "ко мне", "сюда", "притягни", "тягни", "до мене", "сюди", "pull", "yank", "to me", "here", "zieh", "tire$", "attire", "jala$", "atrae",
             "puxa", "puxe", "przyciagnij", "引き寄せ", "拉"
+        });
+        FLAGS.put(FLAG_CHOP, new String[]{
+            "сруб", "спили", "наруб", "вырубь", "вырубай", "руби$", "рубай", "зруб", "chop", "fell$", "cut down", "lumber", "timber", "falle$", "hacke ab", "abats",
+            "tala$", "derruba", "zetnij", "scinaj", "伐採", "砍", "伐"
+        });
+        FLAGS.put(FLAG_ALL, new String[]{
+            "все$", "всех$", "усе$", "всi$", "всі$", "all$", "everything", "alles", "alle$", "tout$", "tous$", "todo$", "todos$", "tudo", "wszystk", "全部", "すべて",
+            "全て", "所有"
         });
         FLAGS.put(FLAG_TALK, new String[]{
             "говори", "можешь говорить", "вернись", "talk$", "speak", "unmute", "rede$", "sprich", "parle", "habla", "fale$", "mow$", "話して", "说话"
