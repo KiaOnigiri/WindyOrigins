@@ -124,6 +124,8 @@ public final class Pilot {
     private static final int CRIT = 65536;
     /** Eyes on him and the arm held: he is behind a shield that would take the blow and leave her open after it. */
     private static final int HOLD = 131072;
+    /** A blow at the air, on purpose: he is waiting behind his shield for her arm to be spent, and here it is, with her own shield up after it. */
+    private static final int FEINT = 262144;
     /** Out of a fight with a player a point of heat takes thirty ticks, not nine and a half: two and a quarter minutes from cold to letting go. */
     static final int HEAT_PEACE = 60;
     /**
@@ -249,6 +251,10 @@ public final class Pilot {
         int duelAt = -1000;
         /** How long the creeper in front of her has been hissing: it goes off at thirty. */
         int fuse;
+        /** How long she has stood off a raised shield; when she last swung at the air to draw it down, and whether she is about to. */
+        int holdFor;
+        int feintAt = -200;
+        boolean feinting;
         /** How long she has stood behind the shield with him in reach and not swinging. */
         int guardFor;
         float hostHealth;
@@ -3160,6 +3166,8 @@ public final class Pilot {
             run.apart = 0;
             run.noWay = false;
             run.fuse = 0;
+            run.holdFor = 0;
+            run.feinting = false;
         } else {
             run.foeSpeed = run.foeSpeed.multiply(0.6).add(foe.getPos().subtract(run.foeWas).multiply(0.4));
             run.foeWas = foe.getPos();
@@ -3375,7 +3383,7 @@ public final class Pilot {
             // seven ticks off the ground and is not at a run. The jump whenever his own blow cannot come first: he is
             // behind her shield's reach, his arm is spent, he is eating, he is in a web. The run otherwise.
             int air = Math.max(mine, 7);
-            boolean leap = !foe.isBlocking() && !host.isTouchingWater() && !host.isClimbing() && !webbed(host)
+            boolean leap = !foe.isBlocking() && !host.isTouchingWater() && !host.isClimbing() && !webbed(host) && !aloft(foe)
                 && (cover || run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem()
                     // And when his blow is coming first whatever she does, with nothing to stand behind: then hers had better be the heavy one.
                     || !cover && run.strikeIn <= mine && away < 6.0);
@@ -3463,20 +3471,62 @@ public final class Pilot {
             return;
         }
 
+        if (duel && run.ticks - run.feintAt < 30 && !foe.isBlocking() && away < 5.8 && host.getAttackCooldownProgress(0.0F) >= 0.75F) {
+            // He has dropped his shield and come for the arm she showed him spent, and it is all but ready again. At
+            // him, from the ground and at a run: a shield lowered takes a quarter of a second to be a shield again,
+            // and her blow is there first.
+            run.flags &= ~(USE | CRIT | KITE | HOLD);
+            run.flags |= PRESS | SWEEP | SPRINT | DUEL;
+        }
+
         if (duel && foe.isBlocking() && !(host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem)) {
             // He stands behind his shield and waits for her blade to bounce off it: for the half second after a blow
             // her arm is spent and her own shield is not yet up, and that is when he strikes. So she does not give it
-            // to him. No axe to knock the shield down with: she keeps her blow, her own shield up, a step out of his
-            // reach, and strikes the moment his comes down, which it must before he can do anything at all.
+            // to him. A shield covers only what is in front of it: she goes round him a step beyond his reach, one
+            // way for a while, and from behind it the blow goes in. And with a shield of her own she offers him what
+            // he is waiting for: a blow at the air from well out of his reach, her shield up straight after it. He
+            // drops his to punish it, steps in, and his blow goes into her shield with his own down.
             Vec3d front = host.getPos().subtract(foe.getPos()).multiply(1.0, 0.0, 1.0);
-            if (front.lengthSquared() < 0.01 || foe.getRotationVec(1.0F).multiply(1.0, 0.0, 1.0).dotProduct(front) > 0.0) {
+            if (front.lengthSquared() < 0.01 || foe.getRotationVec(1.0F).multiply(1.0, 0.0, 1.0).normalize().dotProduct(front.normalize()) > -0.15) {
+                boolean mine = shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
+                float arm = host.getAttackCooldownProgress(0.0F);
+                run.holdFor++;
                 run.flags |= HOLD | DUEL;
-                run.flags &= ~PRESS;
-                if (away < 3.4 && room) {
-                    run.flags |= KITE;
-                    return;
+                run.flags &= ~(PRESS | CRIT | KITE);
+                if (run.feinting && arm < 0.5F) {
+                    run.feinting = false;
+                    run.feintAt = run.ticks;
                 }
+
+                if (mine && run.holdFor > 30 && run.ticks - run.feintAt > 50 && arm >= 1.0F) {
+                    // The blow at the air is struck from six blocks off. He needs most of a second to cover that with
+                    // his shield down, which is what her arm needs to be ready again: his blow goes into her shield
+                    // and hers is in before his shield is back up. Nearer, her arm would still be spent when he came.
+                    if (away < 6.3) {
+                        if (room) {
+                            run.flags |= KITE;
+                        }
+                    } else if (away < 7.4) {
+                        run.feinting = true;
+                        run.flags |= FEINT;
+                        run.flags &= ~USE;
+                    }
+                } else if (mine && run.ticks - run.feintAt < 18) {
+                    run.flags |= USE;
+                }
+
+                return;
             }
+        }
+
+        run.holdFor = 0;
+        run.feinting = false;
+        if (duel && aloft(foe) && !(shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())) && room && away < 5.2 && host.getAttackCooldownProgress(0.0F) < 0.9F) {
+            // He has jumped into his blow, which lands on the way down and counts half as much again. With the arm
+            // ready she would have struck him out of the air. It is not: she steps back, and he comes down short.
+            run.flags &= ~(PRESS | CRIT);
+            run.flags |= KITE | DUEL;
+            return;
         }
 
         if (!duel && crowd && !(foe instanceof CreeperEntity)) {
@@ -3564,6 +3614,12 @@ public final class Pilot {
         walk(run, host, foe.getPos(), 1.2, ANYTHING, false);
         run.flags |= SPRINT;
         return true;
+    }
+
+    /** Off the ground by a jump or a blow, not by a ladder or by water. */
+    private static boolean aloft(LivingEntity who) {
+        return !who.isClimbing() && !who.isTouchingWater() && !who.hasVehicle() && !webbed(who)
+            && !solid(who.getWorld(), BlockPos.ofFloored(who.getX(), who.getY() - 0.3, who.getZ()));
     }
 
     static boolean webbed(LivingEntity who) {
