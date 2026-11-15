@@ -299,9 +299,9 @@ public final class HostManager {
     }
 
     /** Each point of damage actually taken is this much chance of cracking the chip... */
-    public static final float CHIP_BREAK_PER_DAMAGE = 0.025F;
+    public static final float CHIP_BREAK_PER_DAMAGE = 0.01F;
     /** ...up to this much for the heaviest blows. */
-    public static final float CHIP_BREAK_MAX = 0.2F;
+    public static final float CHIP_BREAK_MAX = 0.07F;
     /** The repair kit has to be held in use this long. */
     public static final int REPAIR_TICKS = 40;
 
@@ -2067,12 +2067,12 @@ public final class HostManager {
         return var0.getServer().getPlayerManager().getPlayer(var1.trim()) != null;
     }
 
-    private static final int SEARCH_PLAYER = 30;
-    private static final int SEARCH_PLAIN = 25;
-    private static final int SEARCH_COMMON = 40;
-    private static final int SEARCH_UNCOMMON = 55;
-    private static final int SEARCH_RARE = 75;
-    private static final int SEARCH_LEGENDARY = 90;
+    private static final int SEARCH_PLAYER = 12;
+    private static final int SEARCH_PLAIN = 10;
+    private static final int SEARCH_COMMON = 16;
+    private static final int SEARCH_UNCOMMON = 22;
+    private static final int SEARCH_RARE = 30;
+    private static final int SEARCH_LEGENDARY = 36;
 
     /**
      * What looking through the ground for something costs the chip, in heat. The rarer the thing, the

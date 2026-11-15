@@ -52,7 +52,7 @@ public final class SanguineManager {
     public static final TagKey<Item> ASPEN = TagKey.of(RegistryKeys.ITEM, new Identifier("windyorigins", "aspen"));
     public static final int TASTE_TICKS = 2400;
     public static final int BAT_TICKS = 120;
-    public static final int BAT_COST = 4;
+    public static final int BAT_COST = 2;
     public static final int TASTE_PLAIN = 0;
     public static final int TASTE_ARTHROPOD = 1;
     public static final int TASTE_AQUATIC = 2;
@@ -415,11 +415,11 @@ public final class SanguineManager {
 
     public static void batForm(ServerPlayerEntity var0) {
         if (!var0.hasStatusEffect(WindyEffects.BAT_FORM)) {
-            if (food(var0) < 4) {
+            if (food(var0) < BAT_COST) {
                 PhaseFx.privateSound(var0, WindySounds.DENY, 0.6F, 0.8F);
                 var0.sendMessage(Text.translatable("message.windyorigins.sanguine.too_thirsty").formatted(Formatting.DARK_RED), true);
             } else {
-                var0.getHungerManager().setFoodLevel(food(var0) - 4);
+                var0.getHungerManager().setFoodLevel(food(var0) - BAT_COST);
                 var0.addStatusEffect(new StatusEffectInstance(WindyEffects.BAT_FORM, 120, 0, false, false, true));
                 var0.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 120, 0, false, false, false));
                 SanguineManager.BatGrants.get(var0.getServer()).grant(var0);
