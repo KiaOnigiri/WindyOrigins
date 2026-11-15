@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "Immobilité",
   "power.windyorigins.stillness.description": "Restez immobile 2 secondes et vous disparaissez totalement, armure comprise.",
   "power.windyorigins.vengeance.name": "Vengeance",
-  "power.windyorigins.vengeance.description": "La mort ne vous prend pas tout de suite : pendant 10 secondes vous êtes un fantôme invulnérable, vous volez comme en mode Créatif, y compris à travers les murs, vous voyez votre meurtrier et frappez à pleine force à travers l'armure en infligeant Faiblesse. Vous ne pouvez pas toucher aux blocs. Puis vous vous dissipez, et vos objets tombent là où vous êtes mort. Pas dans le vide ni par /kill.",
+  "power.windyorigins.vengeance.description": "La mort ne vous prend pas tout de suite : pendant 10 secondes vous êtes un fantôme invulnérable, vous volez comme en mode Créatif, y compris à travers les murs, vous voyez votre meurtrier, et chacun de vos coups retire 2 cœurs à travers l'armure, quoi que vous teniez en main, et inflige Faiblesse. Vous ne pouvez pas toucher aux blocs. Puis vous vous dissipez, et vos objets tombent là où vous êtes mort. Pas dans le vide ni par /kill.",
   "power.windyorigins.soul_stride.name": "Foulée des âmes",
   "power.windyorigins.soul_stride.description": "Le sable des âmes et la terre des âmes ne vous ralentissent pas : ils vous accélèrent de 30 %.",
   "power.windyorigins.faded_body.name": "Corps fané",

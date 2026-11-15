@@ -165,7 +165,7 @@
   "power.windyorigins.stillness.name": "Stillness",
   "power.windyorigins.stillness.description": "Stand still for 2 seconds and you vanish completely, armour included.",
   "power.windyorigins.vengeance.name": "Vengeance",
-  "power.windyorigins.vengeance.description": "Death does not take you at once: for 10 seconds you are an invulnerable ghost, flying as in Creative mode, through walls too; you see your killer and strike through armour at full strength, inflicting Weakness. You cannot touch blocks. Then you fade, and your items drop where you died. Not in the void and not from /kill.",
+  "power.windyorigins.vengeance.description": "Death does not take you at once: for 10 seconds you are an invulnerable ghost, flying as in Creative mode, through walls too; you see your killer, and every blow of yours takes 2 hearts through armour, whatever is in your hand, and inflicts Weakness. You cannot touch blocks. Then you fade, and your items drop where you died. Not in the void and not from /kill.",
   "power.windyorigins.soul_stride.name": "Soul Stride",
   "power.windyorigins.soul_stride.description": "Soul sand and soul soil do not slow you; they speed you up by 30%.",
   "power.windyorigins.faded_body.name": "Faded Body",
