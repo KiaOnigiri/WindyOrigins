@@ -266,6 +266,8 @@ public final class Pilot {
         int shieldUp;
         int holdFor;
         int feintAt = -200;
+        int feintOff;
+        int feintKite;
         boolean feinting;
         /** How long she has stood behind the shield with him in reach and not swinging. */
         int guardFor;
@@ -353,6 +355,7 @@ public final class Pilot {
         Direction dropDir;
         int dropDepth;
         int dropStage;
+        int dropGone;
         int dropTicks;
         net.minecraft.item.Item dropWith;
         BlockPos fallEdge;
@@ -1104,6 +1107,111 @@ public final class Pilot {
         return far + holes * 4;
     }
 
+    /** How long one block takes to break with the best thing in the pockets for it, in ticks. */
+    private static int breakTicks(ServerPlayerEntity host, World world, BlockPos pos) {
+        BlockState state = world.getBlockState(pos);
+        float hardness = state.getHardness(world, pos);
+        if (hardness <= 0.0F) {
+            return hardness < 0.0F ? 100000 : 1;
+        }
+
+        float best = 1.0F;
+        boolean fit = !state.isToolRequired();
+
+        for (int i = 0; i < host.getInventory().size(); i++) {
+            ItemStack stack = host.getInventory().getStack(i);
+            if (stack.isEmpty() || stack.isDamageable() && stack.getMaxDamage() - stack.getDamage() <= 2) {
+                continue;
+            }
+
+            float speed = stack.getMiningSpeedMultiplier(state);
+            if (speed > best) {
+                best = speed;
+                fit |= stack.isSuitableFor(state);
+            }
+        }
+
+        return Math.max(1, (int)Math.ceil((double)(hardness * (fit ? 30.0F : 100.0F) / best)));
+    }
+
+    /**
+     * What a way cut straight to a place would cost, in ticks: the steps of it, every block to be broken with what
+     * is in the pockets, every hole to be filled. Step for step the way her own tunnel goes: along the longer side
+     * first, a block up or down a step. -1 when it meets something she may not or cannot break, lava, more holes than
+     * she has blocks for, or is more than forty steps.
+     */
+    private static int through(ServerPlayerEntity host, Vec3d to, boolean anything) {
+        World world = host.getWorld();
+        BlockPos at = host.getBlockPos();
+        BlockPos goal = BlockPos.ofFloored(to);
+        int cost = 0;
+        int holes = 0;
+        int broken = 0;
+
+        for (int step = 0; step < 40; step++) {
+            int dx = goal.getX() - at.getX();
+            int dz = goal.getZ() - at.getZ();
+            int dy = goal.getY() - at.getY();
+            if (Math.abs(dx) + Math.abs(dz) <= 1 && Math.abs(dy) <= 1) {
+                return broken == 0 || holes > fillers(host) ? -1 : cost;
+            }
+
+            Direction dir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? Direction.EAST : Direction.WEST) : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
+            if (dx == 0 && dz == 0) {
+                // Straight above or below: a stair has to go somewhere to rise or sink.
+                dir = host.getHorizontalFacing();
+            }
+
+            BlockPos next = at.offset(dir);
+            BlockPos[] open;
+            BlockPos stand;
+            if (dy > 0 && solid(world, next)) {
+                open = new BlockPos[]{at.up(2), next.up(2), next.up()};
+                stand = next.up();
+            } else if (dy < 0 && drop(world, next.down()) <= 3) {
+                open = new BlockPos[]{next.up(), next, next.down()};
+                stand = next.down();
+            } else {
+                open = new BlockPos[]{next.up(), next};
+                stand = next;
+            }
+
+            for (BlockPos cell : open) {
+                if (world.getFluidState(cell).isIn(FluidTags.LAVA)) {
+                    return -1;
+                }
+
+                if (passable(world, cell)) {
+                    continue;
+                }
+
+                if (!breakable(world, cell) || !anything && !natural(world.getBlockState(cell))) {
+                    return -1;
+                }
+
+                cost += breakTicks(host, world, cell);
+                broken++;
+            }
+
+            int fall = passable(world, stand.down()) ? drop(world, stand) : 0;
+            if (fall > 3) {
+                holes++;
+                cost += 20;
+            } else if (fall > 0 && dy < 0) {
+                stand = stand.down(Math.min(fall, -dy));
+            }
+
+            cost += world.getFluidState(stand).isIn(FluidTags.WATER) ? 12 : 5;
+            if (cost > 4000) {
+                return -1;
+            }
+
+            at = stand;
+        }
+
+        return -1;
+    }
+
     /** How far down the first floor under this cell is; 99 when there is none within reach or it is lava. */
     private static int depth(World world, BlockPos from) {
         for (int i = 1; i <= 40; i++) {
@@ -1286,7 +1394,7 @@ public final class Pilot {
             }
         }
 
-        if (run.dropTicks > 80 && with != Items.SLIME_BLOCK || run.dropTicks > 440) {
+        if (run.dropTicks > 120 && with != Items.SLIME_BLOCK || run.dropTicks > 440) {
             return false;
         }
 
@@ -1305,8 +1413,23 @@ public final class Pilot {
                 }
             }
 
-            // Broken: a moment for it to be picked up.
-            return run.dropTicks < 12;
+            // Broken: it lies there for half a second before it can be taken, and it is not left behind for the
+            // sake of that half second. She waits by it, steps to it if it rolled, and goes on when it is in her
+            // pockets, or when two seconds have brought nothing.
+            if (carries(host, stack -> stack.isOf(with))) {
+                return false;
+            }
+
+            if (run.dropGone == 0) {
+                run.dropGone = run.dropTicks;
+            }
+
+            ItemEntity fallen = lying(host, 5.0, stack -> stack.isOf(with));
+            if (fallen != null && fallen.squaredDistanceTo(host) > 0.6) {
+                run.way.add(lies(host, fallen));
+            }
+
+            return run.dropTicks - run.dropGone < 40;
         }
 
         return false;
@@ -3181,6 +3304,19 @@ public final class Pilot {
                     burrow(run, host, to, null, dig == ANYTHING);
                     return false;
                 }
+
+                // Or straight through what is in the way: a wall of earth a spade goes through in two seconds is not
+                // walked round for twenty. Both ways are counted in ticks, the walk at four and a half a block, and
+                // the cut has to come out well under the walk before she takes it: a tunnel has more ways to go wrong.
+                // A block she is sent to is never "reached" by a walk, which stops beside it: near enough counts.
+                net.minecraft.entity.ai.pathing.PathNode last = run.path.getEnd();
+                boolean arrives = run.path.reachesTarget() || last != null && last.getBlockPos().isWithinDistance(goal, 3.5);
+                int cut = arrives ? through(host, to, dig == ANYTHING) : -1;
+                if (cut > 0 && cut * 10 < run.path.getLength() * 45 * 6 / 10) {
+                    run.burrowFor = 40;
+                    burrow(run, host, to, null, dig == ANYTHING);
+                    return false;
+                }
             }
         }
 
@@ -3620,6 +3756,7 @@ public final class Pilot {
                         run.dropDir = dir;
                         run.dropDepth = far;
                         run.dropStage = 0;
+                        run.dropGone = 0;
                         run.dropTicks = 0;
                         run.dropWith = with;
                         return;
@@ -4194,10 +4331,10 @@ public final class Pilot {
         boolean hisDown = foe instanceof PlayerEntity player && player.getItemCooldownManager().isCoolingDown(Items.SHIELD);
         // One who has caught her by dropping his shield and striking in the same breath is not walked up to with an
         // axe again: that is what he is waiting for. Him she stands off, a step out of reach, and strikes when the
-        // shield comes down. Unless he has kept it up five seconds on end, which is a different man. That last is
-        // for when she has no shield of her own and the axe is all there is. With one she does not go back to the
-        // axe at all: he has only to wait the five seconds out, and behind her shield she loses nothing by waiting too.
-        boolean wary = duel && run.flashHits > 0 && (run.shieldUp < 100 || shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem()));
+        // shield comes down. That is with a shield of her own to stand behind, where she loses nothing by waiting.
+        // With none the axe is all there is, and standing off with a sword only got her struck where she stood: she
+        // goes on taking the axe to him.
+        boolean wary = duel && run.flashHits > 0 && shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
         boolean guarded = duel ? hisShield && !hisDown && run.ticks - run.guardSeenAt < 200 && !wary : foe.isBlocking();
         // Blade to blade in the open, each blow throws the two of them apart and it is a second before they meet again:
         // what counts then is how hard one blow lands, not how many the arm could manage. From behind a shield, where
@@ -4247,9 +4384,10 @@ public final class Pilot {
             // Having a shield of her own is no reason to jump: it is down for as long as she is in the air, and a man
             // with a ready arm who has been waiting for that has all the time he needs.
             boolean leap = !foe.isBlocking() && !hisReady && !host.isTouchingWater() && !host.isClimbing() && !webbed(host) && !aloft(foe)
-                && (run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem()
-                    // And when his blow is coming first whatever she does, with nothing to stand behind: then hers had better be the heavy one.
-                    || !cover && run.strikeIn <= mine && away < 6.0);
+                // With nothing to stand behind and his blow coming first whatever she did, she used to jump so that
+                // hers should at least be the heavy one. Struck in the air she is thrown twice as far, and the heavy
+                // blow lands on nothing: it is the ground blow there too.
+                && (run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem());
             run.flags |= leap ? CRIT : SWEEP;
             if (host.getAttackCooldownProgress(0.0F) >= 0.9F && (run.strikeIn >= 4 || !cover) || !cover && mine <= run.strikeIn + 2) {
                 // Her arm is ready: straight in, no circling. Each sees the other a moment late, so of two who close
@@ -4413,7 +4551,7 @@ public final class Pilot {
                     run.flags |= USE;
                 }
 
-                if (mine && run.holdFor > 100 && run.ticks - run.feintAt > 120 && arm >= 1.0F) {
+                if (mine && run.holdFor > 100 && run.ticks - run.feintAt > 120 && arm >= 1.0F && run.ticks >= run.feintOff) {
                     // The blow at the air is struck from six blocks off. He needs most of a second to cover that with
                     // his shield down, which is what her arm needs to be ready again. She backs off to it behind her
                     // shield while he is near, and at a walk once he is not.
@@ -4423,8 +4561,16 @@ public final class Pilot {
                             if (away > 4.4) {
                                 run.flags &= ~USE;
                             }
+
+                            // He walks after her as fast as she backs away: there is no six blocks to be had from
+                            // him, and all she is doing is being walked to the wall. No more of it for half a minute.
+                            if (++run.feintKite > 60 && away < 5.0) {
+                                run.feintKite = 0;
+                                run.feintOff = run.ticks + 600;
+                            }
                         }
                     } else if (away < 7.4) {
+                        run.feintKite = 0;
                         run.feinting = true;
                         run.flags |= FEINT;
                         run.flags &= ~USE;
@@ -4969,6 +5115,12 @@ public final class Pilot {
                 this.chase = 0;
             }
 
+            if (this.foe instanceof PlayerEntity && this.foe.squaredDistanceTo(host) < 64.0 && host.canSee(this.foe)) {
+                // A creature she has chased three quarters of a minute and not caught is given up for another. A man
+                // she is fighting is not a chase: giving him up for a tick is a tick with her guard down.
+                this.chase = 0;
+            }
+
             if (this.foe != null && (this.foe.getWorld() != host.getWorld() || this.foe.squaredDistanceTo(host) > 48.0 * 48.0 || ++this.chase > 900)) {
                 this.foe = null;
                 this.chase = 0;
@@ -5075,7 +5227,9 @@ public final class Pilot {
     static boolean sunk(ItemEntity item) {
         World world = item.getWorld();
         BlockPos at = item.getBlockPos();
-        return world.getFluidState(at.up()).isIn(FluidTags.WATER) || world.getFluidState(at).isIn(FluidTags.WATER) && world.getFluidState(at.down()).isIn(FluidTags.WATER);
+        // Under water, with more of it over its head: held down by something, or still on its way up. What floats
+        // on the top of a lake, however deep, is not sunk: she swims, and it is hers to swim to.
+        return world.getFluidState(at.up()).isIn(FluidTags.WATER);
     }
 
     static ItemEntity lying(ServerPlayerEntity host, double within, Predicate<ItemStack> wanted) {
@@ -5303,6 +5457,9 @@ public final class Pilot {
         private float heading;
         private Vec3d roam;
         private boolean searching;
+        /** The block of the kind asked for that the Host was looking at when he asked, however far off: that one first. */
+        private BlockPos eyed;
+        private int eyedFor;
 
         Mine(ServerPlayerEntity host, List<Predicate<BlockState>> tiers, int want, boolean search, int label) {
             this.tiers = tiers;
@@ -5312,6 +5469,16 @@ public final class Pilot {
             this.heading = host.getYaw();
             this.shaft = host.getHorizontalFacing();
             this.lastCell = host.getBlockPos();
+            Vec3d eye = host.getEyePos();
+            BlockHitResult at = host.getWorld().raycast(new RaycastContext(eye, eye.add(host.getRotationVec(1.0F).multiply(64.0)), RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, host));
+            if (at.getType() == HitResult.Type.BLOCK) {
+                for (BlockPos pos : new BlockPos[]{at.getBlockPos(), at.getBlockPos().up()}) {
+                    BlockState there = host.getWorld().getBlockState(pos);
+                    if (this.eyed == null && tiers.stream().anyMatch(tier -> tier.test(there))) {
+                        this.eyed = pos.toImmutable();
+                    }
+                }
+            }
 
             // Where does this lie? Decided by the first block of the registry that fits.
             search:
@@ -5546,6 +5713,40 @@ public final class Pilot {
                 this.beds.remove(0);
                 this.sowing = 0;
                 return true;
+            }
+
+            if (this.eyed != null) {
+                // He was looking at one when he asked: that is the one he means, and she goes to it, sixty blocks
+                // off or six, before she looks about for any other.
+                BlockState there = world.getBlockState(this.eyed);
+                Predicate<BlockState> fits = null;
+                for (Predicate<BlockState> tier : this.tiers) {
+                    if (fits == null && tier.test(there)) {
+                        fits = tier;
+                    }
+                }
+
+                if (fits == null || this.skip.contains(this.eyed) || ++this.eyedFor > 900) {
+                    this.eyed = null;
+                } else if (host.getBlockPos().getSquaredDistance(this.eyed) > 100.0 && run.stuck < 6 && !walk(run, host, Vec3d.ofBottomCenter(this.eyed), 9.0, NATURAL, true)) {
+                    return true;
+                } else {
+                    BlockPos found = this.eyed;
+                    this.eyed = null;
+                    this.crop(world, found);
+                    this.cutting = there.getBlock();
+                    this.kind = fits;
+                    this.target = found;
+                    this.spent = 0;
+                    this.idle = 0;
+                    this.pause = 0;
+                    this.searching = false;
+                    if (this.name == null) {
+                        this.name = there.getBlock().getName();
+                    }
+
+                    return true;
+                }
             }
 
             if (run.ticks % 10 == 0) {

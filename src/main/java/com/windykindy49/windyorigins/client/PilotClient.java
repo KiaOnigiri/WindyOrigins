@@ -676,8 +676,10 @@ public final class PilotClient {
                     forward = (flags & KITE) != 0 ? -1.0F : 0.0F;
                 } else if ((flags & USE) != 0) {
                     // Behind her own shield she stands where his blow will have to come: no going round, she is too slow for it.
+                    // And no giving ground when he walks up to it: a man who only has to walk at her to move her walks
+                    // her into a corner, or off an edge.
                     sideways = 0.0F;
-                    forward = near > 3.8 ? 1.0F : (near < 3.1 ? -1.0F : 0.0F);
+                    forward = near > 3.8 ? 1.0F : 0.0F;
                 } else {
                     // With no shield, out of a lunge's reach, and round him there.
                     sideways = (float)holdSide;
@@ -710,6 +712,26 @@ public final class PilotClient {
             }
         } else {
             wtap = 0;
+        }
+
+        // Falling, far enough to be hurt, and something to climb within reach on the way down: she steers onto it and
+        // it stops the fall, as it would for anyone who thought of it in time.
+        if (!player.isOnGround() && !player.isClimbing() && !player.isTouchingWater() && !player.isFallFlying() && !player.hasVehicle()
+            && player.getVelocity().y < -0.3 && (flags & (DROP | FLY)) == 0 && deep(client, player)) {
+            Vec3d hold = grip(client, player);
+            if (Boolean.getBoolean("windy.pilotlog")) {
+                com.windykindy49.windyorigins.WindyOrigins.LOGGER.info("PILOT grip at {} vy {} fell {} hold {}", player.getPos(), player.getVelocity().y, player.fallDistance, hold);
+            }
+
+            if (hold != null) {
+                float off = (float)Math.toRadians((double)MathHelper.wrapDegrees(yawTo(player, hold) - player.getYaw()));
+                float ahead = MathHelper.cos(off);
+                float aside = -MathHelper.sin(off);
+                forward = ahead > 0.38F ? 1.0F : (ahead < -0.38F ? -1.0F : 0.0F);
+                sideways = aside > 0.38F ? 1.0F : (aside < -0.38F ? -1.0F : 0.0F);
+                jump = false;
+                sneak = false;
+            }
         }
 
         if ((flags & FLY) != 0 && player.isFallFlying() && player.isOnGround()) {
@@ -932,6 +954,52 @@ public final class PilotClient {
                 usePos = null;
             }
         }
+    }
+
+    /** Whether what is under a falling body is far enough down to hurt: more than four clear blocks, and no water to land in. */
+    private static boolean deep(MinecraftClient client, ClientPlayerEntity player) {
+        BlockPos at = player.getBlockPos();
+
+        for (int down = 1; down <= 4; down++) {
+            BlockPos cell = at.down(down);
+            if (!client.world.getBlockState(cell).getCollisionShape(client.world, cell).isEmpty() || !client.world.getFluidState(cell).isEmpty()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A ladder, a vine, scaffolding: the nearest thing to climb below a falling body that it can still get onto,
+     * given how fast it is falling and how little a body steers in the air. Null when there is none.
+     */
+    private static Vec3d grip(MinecraftClient client, ClientPlayerEntity player) {
+        BlockPos at = player.getBlockPos();
+        double fall = Math.max(0.5, -player.getVelocity().y);
+        Vec3d best = null;
+        double bestFlat = 9.0;
+
+        for (int down = 1; down <= 12 && best == null; down++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    BlockPos cell = at.add(dx, -down, dz);
+                    if (!client.world.getBlockState(cell).isIn(net.minecraft.registry.tag.BlockTags.CLIMBABLE)) {
+                        continue;
+                    }
+
+                    double hx = (double)cell.getX() + 0.5 - player.getX();
+                    double hz = (double)cell.getZ() + 0.5 - player.getZ();
+                    double flat = Math.sqrt(hx * hx + hz * hz);
+                    if (flat <= 0.35 + 0.1 * (double)down / fall && flat < bestFlat) {
+                        best = new Vec3d((double)cell.getX() + 0.5, (double)cell.getY(), (double)cell.getZ() + 0.5);
+                        bestFlat = flat;
+                    }
+                }
+            }
+        }
+
+        return best;
     }
 
     /**

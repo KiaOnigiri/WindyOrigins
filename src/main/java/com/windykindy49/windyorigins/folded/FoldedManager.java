@@ -53,6 +53,7 @@ import net.minecraft.registry.RegistryKeys;
 public final class FoldedManager {
     public static final String FOLD = "fold";
     public static final int SHOT_COST = 45;
+    public static final int SHOT_PAUSE = 60;
     public static final int STEP_COST = 40;
     public static final int KNOT_COST = 25;
     public static final int KNOT_REFUND = 15;
@@ -326,6 +327,8 @@ public final class FoldedManager {
         }
 
         Powers.setResource(var0, "fold", var4 - SHOT_COST);
+        // Two shots one after another from a full Fold were nineteen hearts in three seconds. The rifle rests between them.
+        var0.getItemCooldownManager().set(RIFLE, SHOT_PAUSE);
         if (var13 != null) {
             DamageSource var19 = new DamageSource(var5.getRegistryManager().get(RegistryKeys.DAMAGE_TYPE).entryOf(SHOT_DAMAGE_TYPE), var0, var0);
             var13.timeUntilRegen = 0;
