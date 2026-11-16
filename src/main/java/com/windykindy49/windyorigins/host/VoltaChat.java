@@ -770,7 +770,7 @@ public final class VoltaChat {
     private static final java.util.Set<String> SMALL = java.util.Set.of(
         "из", "с", "со", "от", "в", "во", "вокруг", "рядом", "ближайших", "ближайшего", "ближайшие", "из-под", "і", "із", "з", "зі", "from", "of", "out", "the", "in",
         "near", "nearby", "nearest", "around", "aus", "der", "den", "dem", "de", "du", "des", "del", "los", "las", "da", "do", "dos", "das", "ze", "ich", "их", "них",
-        "them", "и", "and", "или", "or", "a", "le", "la", "les", "el"
+        "them", "и", "and", "или", "or", "a", "le", "la", "les", "el", "dans"
     );
 
     /** Whether nothing is named here but chests and barrels: "from the chests", "из сундуков", or nothing at all. */
@@ -1047,8 +1047,9 @@ public final class VoltaChat {
         });
         // Other ways people actually say it.
         more(HostCommand.STOP, "прекращай", "отставить", "не надо", "хорош$", "стопэ", "остановк", "тормози", "перестань", "забей", "nevermind", "never mind", "lass", "basta");
-        more(HostCommand.FIND, "найд", "разыщи", "сыщи", "поиск", "ищу", "ищем", "ищи мне", "есть ли", "покажи", "подскажи где", "куда делся", "gde$", "look for", "show me", "is there", "any$");
-        more(HostCommand.FETCH, "принес", "достан", "забери", "вытащи", "вынь", "возьми$", "возьми мне", "взять$", "дай мне", "неси мне", "подкинь мне", "take", "hand me", "pass me", "gib mir", "prends", "dame", "me da", "daj");
+        more(HostCommand.FIND, "найд", "разыщи", "сыщи", "поиск", "ищу", "ищем", "ищи мне", "есть ли", "покажи", "подскажи где", "куда делся", "gde$", "look for", "show me", "is there", "any$", "such$", "ache$", "acha$");
+        more(HostCommand.FETCH, "принес", "достан", "забери", "вытащи", "вынь", "возьми$", "возьми мне", "взять$", "дай мне", "неси мне", "подкинь мне", "take", "hand me", "pass me", "gib mir", "prends", "dame", "me da", "daj",
+            "візьми$", "nimm$", "hol mir", "coge$", "saca$", "wez$", "pegue$");
         more(
             HostCommand.OVERLOAD, "врежь", "вмажь", "долбани", "шандарахни", "жги$", "жгани", "пальни", "стрельни", "грохни", "замочи", "прикончи", "добей", "уничтож",
             "разнеси", "поджарь", "тресни", "вреж", "ебни", "ебани", "въеби", "ушатай", "вальни", "гаси$", "фас$", "destroy", "nuke", "bonk", "smack", "electrocute", "zapp"
