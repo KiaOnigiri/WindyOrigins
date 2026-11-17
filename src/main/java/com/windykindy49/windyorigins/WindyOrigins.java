@@ -27,6 +27,7 @@ public class WindyOrigins implements ModInitializer {
                         ? ActionResult.FAIL
                         : ActionResult.PASS
             );
+        com.windykindy49.windyorigins.host.DuelLog.init();
         MirrorPowers.register();
         BountyPowers.register();
         BountyEvents.register();
