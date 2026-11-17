@@ -37,6 +37,7 @@ public final class RaceEvents {
         DreamEntities.init();
         ServerTickEvents.END_SERVER_TICK.register(var0 -> {
             TempBlocks.tick(var0);
+            com.windykindy49.windyorigins.host.DuelLog.sweep(var0);
             FrostManager.tick(var0);
             LuminianManager.tick(var0);
             FoldedManager.tick(var0);
@@ -105,6 +106,7 @@ public final class RaceEvents {
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((var0, var1, var2) -> !HostManager.onChat(var1, var0.getContent().getString()));
         // While the worlds are still up: wake the dreamers, release the possessed, take back what was only lent.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(var0 -> {
+            com.windykindy49.windyorigins.host.DuelLog.stopping(var0);
             DreamManager.stopping(var0);
             RevenantManager.stopping(var0);
             HostManager.stopping();

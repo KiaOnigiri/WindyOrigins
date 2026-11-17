@@ -128,13 +128,16 @@ public final class Pilot {
     private static final int FEINT = 262144;
     /** Off an edge on purpose: on the way down the eyes go to the ground and what is in the hand is put under her as she lands. */
     private static final int DROP = 524288;
-    /** Out of a fight with a player a point of heat takes twenty-three and a half ticks, not eight and a half: a minute and three quarters from cold to letting go. */
-    static final int HEAT_PEACE = 47;
+    /** Between two: the eyes, and the shield with them, go where she is told to look and not to the one she is fighting. */
+    private static final int MID = 1048576;
     /**
-     * Two points of heat in this many ticks while she works, one while she only holds the body and waits: with
-     * what taking it costs, a cold chip is at a hundred in forty-five seconds of work.
+     * How long a point of heat takes while she has the body, in twentieths of a tick; twice as long while she only
+     * holds it and waits. Out of a fight with a player twenty-three and a half ticks: a minute and three quarters
+     * from cold to letting go.
      */
-    static final int HEAT_EVERY = 17;
+    static final int HEAT_PEACE = 470;
+    /** In a fight with a player ten and eight tenths: forty-eight seconds from cold to letting go. */
+    static final int HEAT_EVERY = 216;
     /** Taking the body is a request like any other. */
     static final int HEAT_TAKE = HostCommand.PILOT.heat;
     /** She lets go of the body by herself before the chip cooks, and will not take it this near to that. */
@@ -218,6 +221,8 @@ public final class Pilot {
         int pearlAt = -200;
         /** When a web last went down at his feet, or she last gave up trying. */
         int webAt = -200;
+        int fireAt = -200;
+        int fireTry;
         int webTry;
         /** With him caught in a web and her arm ready: how long she has stood waiting for his to be spent. */
         int webWait;
@@ -249,8 +254,10 @@ public final class Pilot {
         int lastWay;
         /** His blow has just gone by and her arm is ready: the shield down and hers in, before his is ready again. */
         boolean counter;
+        int counterFor = -1;
         /** When she last had a player to fight. */
         int duelAt = -1000;
+        int duelFoe = -1;
         /** How long the creeper in front of her has been hissing: it goes off at thirty. */
         int fuse;
         /** How long she has stood off a raised shield; when she last swung at the air to draw it down, and whether she is about to. */
@@ -272,6 +279,14 @@ public final class Pilot {
         /** How long she has stood behind the shield with him in reach and not swinging. */
         int guardFor;
         int pokeAfter;
+        int openAt = -100;
+        boolean hisBrink;
+        /** Another player who is on her while she fights the one she is fighting, when there is one within reach of mattering. */
+        LivingEntity second;
+        boolean pair;
+        /** How many ticks before a blow of that other one can land. */
+        int secondIn = 99;
+        boolean turning;
         float hostHealth;
         int bottleAt = -200;
         int crystalRest;
@@ -382,6 +397,10 @@ public final class Pilot {
             this.attackId = -1;
             this.look = null;
             this.flags = 0;
+            this.second = null;
+            this.pair = false;
+            this.secondIn = 99;
+            this.turning = false;
         }
     }
 
@@ -402,6 +421,7 @@ public final class Pilot {
         BAGGED.clear();
         HANDS.clear();
         RUNS.clear();
+        HABITS.clear();
     }
 
     static Run run(ServerPlayerEntity host) {
@@ -465,6 +485,7 @@ public final class Pilot {
             return;
         }
 
+        DuelLog.end(host, line);
         shut(was, host);
         if (was.puppetOf != null) {
             // Somebody else's body, let go of: no word from her to them, only the strings gone.
@@ -707,7 +728,8 @@ public final class Pilot {
         run.ticks++;
         // A fight with a player is what cooks the chip; any other work it bears three times as long.
         boolean pvp = run.ticks - run.duelAt < 100;
-        if (run.ticks * 2 % ((pvp ? HEAT_EVERY : HEAT_PEACE) * (run.task == null || run.task.resting() ? 2 : 1)) < 2) {
+        // Both are in twentieths of a tick: a point of heat every 10.8 ticks of a fight, every 23.5 of other work.
+        if (run.ticks * 20 % ((pvp ? HEAT_EVERY : HEAT_PEACE) * (run.task == null || run.task.resting() ? 2 : 1)) < 20) {
             if (HostManager.heat(host) >= HEAT_STOP) {
                 // The chip is about to cook: she lets go by herself and remembers where she was.
                 release(host, remember(host) ? "pilot_hot_stop" : "pilot_hot");
@@ -976,6 +998,10 @@ public final class Pilot {
     }
 
     private static void send(ServerPlayerEntity host, Run run) {
+        if (run.duelAt == run.ticks) {
+            DuelLog.tick(host, run);
+        }
+
         int hash = run.way.hashCode() * 31 + java.util.Objects.hash(run.breakPos, run.usePos, run.attackId, run.look, run.flags, run.slot, run.label, run.placeAgainst, run.placeFace);
         long now = host.getWorld().getTime();
         if (hash == run.sentHash && now - run.sentAt < 10L) {
@@ -4074,10 +4100,43 @@ public final class Pilot {
     }
 
     /** The body is told to fight this creature with the best weapon it carries. */
+    /**
+     * What she has learned of one man, kept from fight to fight for as long as the server runs: how often she has
+     * lowered her shield to strike at him, and how often he made her pay for it. Not how often he has caught her
+     * by dropping his own shield: that makes her stand off, standing off wins nothing, and carried from one fight
+     * into the next it turned fights she was winning into fights nobody won.
+     */
+    static final class Habit {
+        int opens;
+        int punished;
+
+        /** He has made her pay for at least half of the times she opened. */
+        boolean punishes() {
+            return this.opens >= 2 && this.punished * 2 >= this.opens;
+        }
+
+        /** Three times and never once. */
+        boolean lets() {
+            return this.opens >= 3 && this.punished == 0;
+        }
+    }
+
+    private static final Map<UUID, Habit> HABITS = new HashMap<>();
+
+    static Habit habit(LivingEntity foe) {
+        return HABITS.computeIfAbsent(foe.getUuid(), id -> new Habit());
+    }
+
     static void fight(Run run, ServerPlayerEntity host, LivingEntity foe) {
         double away = (double)host.distanceTo(foe);
         boolean sees = host.canSee(foe);
         boolean duel = foe instanceof PlayerEntity;
+        if (duel) {
+            // A fight with a player, whatever she does this tick of it: a blow, a bite, a step back. It is all in the record.
+            run.duelAt = run.ticks;
+            run.duelFoe = foe.getId();
+        }
+
         // Where it is going: by where it was a tick ago, since nobody tells the server how fast a player means to move.
         if (run.foeId != foe.getId() || run.foeWas == null) {
             run.foeId = foe.getId();
@@ -4092,6 +4151,11 @@ public final class Pilot {
             run.shieldUp = 0;
             run.blow = 0.0F;
             run.feinting = false;
+            run.openAt = -100;
+            if (run.counterFor != foe.getId()) {
+                // The blow she was about to answer was another man's: this one has not swung.
+                run.counter = false;
+            }
         } else {
             run.foeSpeed = run.foeSpeed.multiply(0.6).add(foe.getPos().subtract(run.foeWas).multiply(0.4));
             run.foeWas = foe.getPos();
@@ -4106,6 +4170,7 @@ public final class Pilot {
                 // Hers only if his blow went into the shield or the air: thrown back by it, she is in no place to answer.
                 run.foeSwungAt = run.ticks;
                 run.counter = host.getAttackCooldownProgress(0.0F) >= 0.8F && host.getHealth() + host.getAbsorptionAmount() >= run.hostHealth - 0.01F;
+                run.counterFor = foe.getId();
             }
 
             if (host.getAttackCooldownProgress(0.0F) < 0.5F || run.ticks - run.foeSwungAt > 7) {
@@ -4117,6 +4182,12 @@ public final class Pilot {
             if (mine < run.hostHealth - 0.01F) {
                 if (run.ticks - run.guardSeenAt <= 6) {
                     run.flashHits++;
+                }
+
+                if (run.ticks - run.openAt <= 14) {
+                    // She had lowered her shield to strike, and he struck first or struck back: that is counted against the next time.
+                    habit(foe).punished++;
+                    run.openAt = -100;
                 }
 
                 run.blow = Math.max(run.blow, run.hostHealth - mine);
@@ -4220,6 +4291,24 @@ public final class Pilot {
             }
 
             if (sees && away < 6.5 && crystal(run, host, foe)) {
+                return;
+            }
+
+            if (run.second != null && shielded(host) && host.distanceTo(run.second) < 9.0F && away < 9.0
+                && host.getItemCooldownManager().getCooldownProgress(host.getOffHandStack().getItem(), 0.0F) > 0.15F) {
+                // Two on her, and an axe has knocked her shield down for five seconds. Those five seconds are not
+                // fought: she is off at a run, away from the pair of them, and comes back when it is a shield again.
+                Vec3d mid = foe.getPos().add(run.second.getPos()).multiply(0.5);
+                Vec3d to = away(host, host.getPos().subtract(mid), 10.0);
+                if (to != null) {
+                    run.attackId = -1;
+                    walk(run, host, surface(host.getWorld(), to.x, to.z, host.getY()), 1.0, NONE, true);
+                    run.flags |= SPRINT | HOP;
+                    return;
+                }
+            }
+
+            if (scorch(run, host, foe, away, sees)) {
                 return;
             }
 
@@ -4334,7 +4423,10 @@ public final class Pilot {
         // shield comes down. That is with a shield of her own to stand behind, where she loses nothing by waiting.
         // With none the axe is all there is, and standing off with a sword only got her struck where she stood: she
         // goes on taking the axe to him.
-        boolean wary = duel && run.flashHits > 0 && shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
+        // Nor is it for a man who has an axe in his own hand: he is coming for her shield, not waiting behind his,
+        // and standing still behind hers is the one thing not to do about that.
+        boolean wary = duel && run.flashHits > 0 && shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
+            && !(foe.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem);
         boolean guarded = duel ? hisShield && !hisDown && run.ticks - run.guardSeenAt < 200 && !wary : foe.isBlocking();
         // Blade to blade in the open, each blow throws the two of them apart and it is a second before they meet again:
         // what counts then is how hard one blow lands, not how many the arm could manage. From behind a shield, where
@@ -4369,7 +4461,6 @@ public final class Pilot {
         }
 
         if (duel) {
-            run.duelAt = run.ticks;
             boolean cover = shielded(host) && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
             int mine = Math.max(0, (int)Math.ceil((double)((0.95F - host.getAttackCooldownProgress(0.0F)) * host.getAttackCooldownProgressPerTick())));
             // Two blows. From the ground at a run, the moment the arm is ready: it is the run behind it that throws him
@@ -4388,8 +4479,21 @@ public final class Pilot {
                 // hers should at least be the heavy one. Struck in the air she is thrown twice as far, and the heavy
                 // blow lands on nothing: it is the ground blow there too.
                 && (run.counter || run.strikeIn >= air + 2 || webbed(foe) || foe.isUsingItem());
+            // An edge. With a drop or lava close behind him, the blow that counts is the one that throws: from the
+            // ground, at a run, and never mind that the other is half as heavy again. An edge behind her changes
+            // nothing in how she strikes: keeping her feet on the ground for it was tried, and without the heavy blow
+            // she lost more rounds than the edge ever cost her.
+            double flatX = foe.getX() - host.getX();
+            double flatZ = foe.getZ() - host.getZ();
+            double flat = Math.sqrt(flatX * flatX + flatZ * flatZ);
+            run.hisBrink = flat > 0.3 && away < 6.0 && !foe.isBlocking() && brink(host.getWorld(), foe.getPos(), flatX / flat, flatZ / flat);
+            if (run.hisBrink || run.pair) {
+                // Nor between two: in the air her shield is down and there is one of them to either side of it.
+                leap = false;
+            }
+
             run.flags |= leap ? CRIT : SWEEP;
-            if (host.getAttackCooldownProgress(0.0F) >= 0.9F && (run.strikeIn >= 4 || !cover) || !cover && mine <= run.strikeIn + 2) {
+            if (host.getAttackCooldownProgress(0.0F) >= 0.9F && (run.strikeIn >= 4 || !cover) || !cover && mine <= run.strikeIn + 2 || run.hisBrink && !cover && mine <= 2) {
                 // Her arm is ready: straight in, no circling. Each sees the other a moment late, so of two who close
                 // it is the one still coming on who gets the blow in first, and the one who slows who takes it.
                 run.flags |= PRESS;
@@ -4418,16 +4522,29 @@ public final class Pilot {
 
             // And when she does, it is after a wait he cannot count: four to seven seconds, not the same second and
             // a half every time, which a patient man learns and is ready for.
+            // And by what he has done about it before: with a man who has made her pay for it she waits twice as
+            // long, and with one who never has, a second and a half is enough.
+            Habit known = duel ? habit(foe) : new Habit();
             if (run.guardFor == 0) {
-                run.pokeAfter = 80 + host.getRandom().nextInt(60);
+                run.pokeAfter = known.punishes() ? 160 + host.getRandom().nextInt(120) : (known.lets() ? 30 + host.getRandom().nextInt(30) : 80 + host.getRandom().nextInt(60));
             }
 
-            boolean poke = run.guardFor > run.pokeAfter && !hisUp;
+            // With a second man on her the shield is not lowered for anything but an answer.
+            boolean poke = run.guardFor > run.pokeAfter && !hisUp && !run.pair;
+            if (poke && run.ticks - run.openAt > 40 && duel) {
+                run.openAt = run.ticks;
+                known.opens++;
+            }
+
             // Her answer to a blow of his is for a blow struck within reach of her. One struck at the air from further
             // off is an invitation to lower the shield and walk into the next.
-            boolean answer = run.counter && away < 4.2;
+            // With a second man on her, only if his own blow cannot land before the shield is a shield again: down,
+            // the blow, up, and the quarter of a second a raised shield takes to count. And she turns to the one she
+            // answers before she lowers it, since between two she was looking at neither.
+            boolean answer = run.counter && away < 4.2 && !(run.pair && run.secondIn < 8);
+            run.turning = run.pair && answer && !faces(host, foe, 25.0);
             boolean between = duel
-                ? run.strikeIn <= 12 && away < 9.0 && !answer && !poke && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
+                ? (run.strikeIn <= 12 && away < 9.0 || run.pair && run.secondIn <= 12) && (!answer || run.turning) && !poke && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem())
                 : away < 3.8 && host.getAttackCooldownProgress(0.0F) < 0.7F;
             if (duel && foe.isBlocking() && !wary && host.getMainHandStack().getItem() instanceof net.minecraft.item.AxeItem) {
                 // The axe is in her hand and his shield is up. Behind it he cannot strike first, but he can drop it and
@@ -4436,8 +4553,10 @@ public final class Pilot {
                 // on the way lands on it, and hers is out the tick after her shield is down.
                 boolean full = host.getAttackCooldownProgress(-1.0F) >= 1.0F;
                 if (away < 5.0) {
-                    between = !(full && away <= 3.0) && !answer && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
-                } else if (host.getAttackCooldownProgress(0.0F) >= 0.9F) {
+                    // Not with a second man on her. One behind a shield with a ready arm answers the axe with his blade,
+                    // and that is a trade; with two of them to her one, trades are how she loses.
+                    between = !(full && away <= 3.0 && !run.pair) && !answer && !host.getItemCooldownManager().isCoolingDown(host.getOffHandStack().getItem());
+                } else if (host.getAttackCooldownProgress(0.0F) >= 0.9F && !run.pair) {
                     between = false;
                 }
 
@@ -4447,6 +4566,7 @@ public final class Pilot {
             }
 
             run.guardFor = hisUp ? 0 : (duel && between && away < 3.6 ? run.guardFor + 1 : (poke && run.guardFor < run.pokeAfter + 8 ? run.guardFor + 1 : 0));
+
             if (duel && (answer || poke)) {
                 run.flags |= PRESS;
             }
@@ -4551,7 +4671,7 @@ public final class Pilot {
                     run.flags |= USE;
                 }
 
-                if (mine && run.holdFor > 100 && run.ticks - run.feintAt > 120 && arm >= 1.0F && run.ticks >= run.feintOff) {
+                if (mine && run.holdFor > 100 && run.ticks - run.feintAt > 120 && arm >= 1.0F && run.ticks >= run.feintOff && !run.pair) {
                     // The blow at the air is struck from six blocks off. He needs most of a second to cover that with
                     // his shield down, which is what her arm needs to be ready again. She backs off to it behind her
                     // shield while he is near, and at a walk once he is not.
@@ -4684,10 +4804,175 @@ public final class Pilot {
             && !solid(who.getWorld(), BlockPos.ofFloored(who.getX(), who.getY() - 0.3, who.getZ()));
     }
 
+    /** Whether the body is turned to it, to within so many degrees, flat. */
+    private static boolean faces(ServerPlayerEntity host, Entity it, double within) {
+        double want = Math.toDegrees(Math.atan2(it.getZ() - host.getZ(), it.getX() - host.getX())) - 90.0;
+        return Math.abs(net.minecraft.util.math.MathHelper.wrapDegrees(want - (double)host.getYaw())) <= within;
+    }
+
+    /**
+     * Two on her and her shield up. A shield covers the half of the world in front of it, so it is turned to the
+     * middle of the two and takes the blows of both. With one to either side of her that is no longer enough, and she
+     * backs out from between them, side on to the pair, until both are in front of her again.
+     */
+    private static void amid(Run run, ServerPlayerEntity host, LivingEntity foe) {
+        LivingEntity second = run.second;
+        if (!run.pair || second == null || run.turning || run.attackId != foe.getId() || (run.flags & USE) == 0 || (run.flags & (FEINT | CRIT)) != 0 || !host.isBlocking() && !shielded(host)) {
+            return;
+        }
+
+        Vec3d a = new Vec3d(foe.getX() - host.getX(), 0.0, foe.getZ() - host.getZ());
+        Vec3d b = new Vec3d(second.getX() - host.getX(), 0.0, second.getZ() - host.getZ());
+        if (a.lengthSquared() < 0.04 || b.lengthSquared() < 0.04) {
+            return;
+        }
+
+        a = a.normalize();
+        b = b.normalize();
+        double spread = a.dotProduct(b);
+        if (spread > 0.94) {
+            // One behind the other, near enough: the shield that faces one faces both.
+            return;
+        }
+
+        Vec3d mid = a.add(b);
+        run.flags &= ~(PRESS | HOLD | KITE);
+        if (mid.lengthSquared() < 0.25) {
+            // One on each side: no way of standing covers both. The shield goes to the one whose blow is due first,
+            // and she moves sideways out from between them. Side on to both, it covered neither.
+            mid = run.secondIn < run.strikeIn ? b : a;
+            run.flags |= HOLD;
+        } else if (spread < 0.2) {
+            run.flags |= KITE;
+        }
+
+        mid = mid.normalize();
+        run.look = host.getEyePos().add(mid.multiply(4.0));
+        run.flags |= MID | USE | DUEL;
+    }
+
+    /** Whether fire takes to it, by the game's own table of what burns. */
+    private static boolean burns(BlockState state) {
+        if (state.isAir()) {
+            return false;
+        }
+
+        try {
+            net.fabricmc.fabric.api.registry.FlammableBlockRegistry.Entry entry = net.fabricmc.fabric.api.registry.FlammableBlockRegistry.getDefaultInstance().get(state.getBlock());
+            return entry != null && entry.getBurnChance() > 0;
+        } catch (Throwable problem) {
+            // No table to ask on this loader: wood, wool, leaves and what grows are what burns.
+            return state.isIn(net.minecraft.registry.tag.BlockTags.LOGS) || state.isIn(net.minecraft.registry.tag.BlockTags.PLANKS) || state.isIn(net.minecraft.registry.tag.BlockTags.WOOL)
+                || state.isIn(net.minecraft.registry.tag.BlockTags.LEAVES) || state.isIn(net.minecraft.registry.tag.BlockTags.WOODEN_STAIRS) || state.isIn(net.minecraft.registry.tag.BlockTags.WOODEN_SLABS)
+                || state.isIn(net.minecraft.registry.tag.BlockTags.WOODEN_FENCES) || state.isIn(net.minecraft.registry.tag.BlockTags.WOODEN_DOORS) || state.isIn(net.minecraft.registry.tag.BlockTags.WOOL_CARPETS);
+        }
+    }
+
+    /**
+     * An edge at somebody's back: within two and a half blocks the way given, with no wall between, the floor is four
+     * or more down, or there is lava. Water to land in is a floor.
+     */
+    static boolean brink(World world, Vec3d at, double dx, double dz) {
+        for (double far = 1.0; far < 2.6; far += 0.75) {
+            BlockPos cell = BlockPos.ofFloored(at.x + dx * far, at.y + 0.2, at.z + dz * far);
+            if (solid(world, cell) || solid(world, cell.up())) {
+                return false;
+            }
+
+            if (world.getFluidState(cell).isIn(FluidTags.LAVA)) {
+                return true;
+            }
+
+            int down = 0;
+            while (down < 4) {
+                BlockPos under = cell.down(down + 1);
+                if (world.getFluidState(under).isIn(FluidTags.LAVA)) {
+                    return true;
+                }
+
+                if (solid(world, under) || !world.getFluidState(under).isEmpty()) {
+                    break;
+                }
+
+                down++;
+            }
+
+            if (down >= 4) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     static boolean webbed(LivingEntity who) {
         World world = who.getWorld();
         BlockPos feet = who.getBlockPos();
         return world.getBlockState(feet).isOf(Blocks.COBWEB) || world.getBlockState(feet.up()).isOf(Blocks.COBWEB);
+    }
+
+    /**
+     * Fire. A shield stops a blade and an arrow and does nothing at all about the ground its owner stands on. A man
+     * who has settled down behind one, with her in front of him and neither of them striking, has the floor under
+     * his feet set alight, if there is flint and steel or a fire charge in the pockets: he burns for eight seconds
+     * whatever he holds up, and has to come out from behind it or stand there and burn.
+     */
+    private static boolean scorch(Run run, ServerPlayerEntity host, LivingEntity foe, double away, boolean sees) {
+        World world = host.getWorld();
+        boolean lit = run.ticks - run.fireTry < 12 && run.fireTry > 0;
+        if (!(foe instanceof PlayerEntity) || !sees || away > 4.6 || away < 2.8 || run.ticks - run.fireAt < 120 || foe.isOnFire() || foe.isFireImmune()
+            || foe.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.FIRE_RESISTANCE) || foe.isTouchingWaterOrRain()
+            || !lit && (!foe.isBlocking() || run.holdFor < 25)
+            || !carries(host, stack -> stack.isOf(Items.FLINT_AND_STEEL) && stack.getMaxDamage() - stack.getDamage() > 1 || stack.isOf(Items.FIRE_CHARGE))) {
+            if (foe.isOnFire() && lit) {
+                run.fireAt = run.ticks;
+            }
+
+            run.fireTry = 0;
+            return false;
+        }
+
+        BlockPos cell = foe.getBlockPos();
+        Vec3d top = Vec3d.ofCenter(cell.down()).add(0.0, 0.5, 0.0);
+        if (world.getBlockState(cell).isIn(net.minecraft.registry.tag.BlockTags.FIRE)) {
+            // It is burning under him: enough.
+            run.fireAt = run.ticks;
+            run.fireTry = 0;
+            return false;
+        }
+
+        if (cell.equals(host.getBlockPos()) || !world.getBlockState(cell).isAir() || !world.getBlockState(cell.down()).isSideSolidFullSquare(world, cell.down(), Direction.UP)
+            || host.getEyePos().squaredDistanceTo(top) > 4.3 * 4.3) {
+            run.fireTry = 0;
+            return false;
+        }
+
+        // Not where it would spread: nothing that burns within two blocks of it. A fight is no reason to burn a house down.
+        if (run.fireTry == 0) {
+            for (BlockPos near : BlockPos.iterate(cell.add(-2, -1, -2), cell.add(2, 3, 2))) {
+                if (burns(world.getBlockState(near))) {
+                    run.fireAt = run.ticks;
+                    return false;
+                }
+            }
+        }
+
+        if (run.fireTry == 0) {
+            run.fireTry = run.ticks;
+        } else if (run.ticks - run.fireTry >= 12) {
+            // Half a second and no fire: not this time. The blade again, and no more of this for a while.
+            run.fireAt = run.ticks - 60;
+            run.fireTry = 0;
+            return false;
+        }
+
+        run.slot = equip(host, stack -> stack.isOf(Items.FLINT_AND_STEEL) && stack.getMaxDamage() - stack.getDamage() > 1 ? 2.0 : (stack.isOf(Items.FIRE_CHARGE) ? 1.0 : 0.0));
+        run.attackId = -1;
+        run.placeAgainst = cell.down();
+        run.placeFace = Direction.UP;
+        run.look = top;
+        run.flags |= DUEL;
+        return true;
     }
 
     /**
@@ -5068,6 +5353,11 @@ public final class Pilot {
         private int chase;
         private float heading;
         private Vec3d roam;
+        /** Players who struck her while she was fighting a man she was sent for, and when each last did. They are fought too. */
+        private final Map<UUID, Integer> others = new HashMap<>();
+        private final Map<UUID, Float> arms = new HashMap<>();
+        private boolean men;
+        private int dwell;
 
         Hunt(ServerPlayerEntity host, Predicate<LivingEntity> prey, int want, boolean guard, int linger) {
             this.linger = linger;
@@ -5104,15 +5394,144 @@ public final class Pilot {
             return best;
         }
 
+        /** Who else is in it: any player whose blow has just landed on her, or on her shield, who is not the one she is on. */
+        private void joined(Run run, ServerPlayerEntity host) {
+            if (host.getAttacker() instanceof PlayerEntity other && other != host && other.isAlive() && !other.isSpectator() && !other.isCreative()
+                && host.age - host.getLastAttackedTime() < 4 && PhaseFx.samePhase(other, host) && (this.others.containsKey(other.getUuid()) || other != this.foe && !this.prey.test(other))) {
+                this.others.put(other.getUuid(), run.ticks);
+            }
+
+            if (this.foe != null && this.others.containsKey(this.foe.getUuid())) {
+                // The one she is fighting this moment is in it for as long as she is fighting him.
+                this.others.put(this.foe.getUuid(), run.ticks);
+            }
+
+            // Out of it again when he is gone, or has not struck at her for a quarter of a minute.
+            this.others.entrySet().removeIf(entry -> {
+                PlayerEntity who = host.getWorld().getPlayerByUuid(entry.getKey());
+                return who == null || !who.isAlive() || who.isSpectator() || run.ticks - entry.getValue() > 300;
+            });
+        }
+
+        private PlayerEntity nearestOther(ServerPlayerEntity host) {
+            PlayerEntity best = null;
+            double bestDistance = 24.0 * 24.0;
+
+            for (UUID id : this.others.keySet()) {
+                PlayerEntity who = host.getWorld().getPlayerByUuid(id);
+                if (who != null && who.isAlive() && who.squaredDistanceTo(host) < bestDistance) {
+                    bestDistance = who.squaredDistanceTo(host);
+                    best = who;
+                }
+            }
+
+            return best;
+        }
+
+        /**
+         * Two or more players on her. Which of them she fights this tick, and which is the other one to mind. She
+         * stays on one for most of a second at least, since every change costs her what she had learnt of the last.
+         * The nearest as a rule, with something in hand for the one she is on already and for one who is two blows
+         * from the end; and whoever has just swung at her and missed or hit her shield, while her own arm is ready,
+         * is the one the answer goes to.
+         */
+        private LivingEntity among(Run run, ServerPlayerEntity host) {
+            List<PlayerEntity> near = new ArrayList<>();
+
+            for (PlayerEntity who : host.getWorld().getPlayers()) {
+                if (who != host && who.isAlive() && !who.isSpectator() && !who.isCreative() && who.squaredDistanceTo(host) < 64.0 && PhaseFx.samePhase(who, host)
+                    && (who == this.foe || this.others.containsKey(who.getUuid()) || this.prey.test(who))) {
+                    near.add(who);
+                }
+            }
+
+            if (near.size() < 2 && (near.isEmpty() || near.get(0) == this.foe)) {
+                this.arms.clear();
+                return this.foe;
+            }
+
+            LivingEntity pick = this.foe;
+            PlayerEntity struck = null;
+
+            for (PlayerEntity who : near) {
+                float cool = who.getAttackCooldownProgress(0.0F);
+                Float was = this.arms.put(who.getUuid(), cool);
+                if (was != null && cool < was - 0.3F && who.distanceTo(host) < 4.2F && (struck == null || who.squaredDistanceTo(host) < struck.squaredDistanceTo(host))) {
+                    struck = who;
+                }
+            }
+
+            this.dwell--;
+            // A blow her shield took shakes her as one that landed does: what tells them apart is whether it cost her anything.
+            if (struck != null && struck != this.foe && host.getHealth() + host.getAbsorptionAmount() >= run.hostHealth - 0.01F && host.getAttackCooldownProgress(0.0F) >= 0.8F && shielded(host)) {
+                pick = struck;
+                this.dwell = 10;
+                run.counter = true;
+                run.counterFor = struck.getId();
+                run.foeSwungAt = run.ticks;
+                run.foeCool = struck.getAttackCooldownProgress(0.0F);
+            } else if (this.dwell <= 0 || !(this.foe instanceof PlayerEntity) || !near.contains(this.foe)) {
+                double best = Double.MAX_VALUE;
+
+                for (PlayerEntity who : near) {
+                    if (!host.canSee(who) && who != this.foe) {
+                        continue;
+                    }
+
+                    double d = (double)who.distanceTo(host);
+                    double score = d - (who == this.foe ? 1.2 : 0.0) - (who.getHealth() <= 6.0F && d < 4.5 ? 2.0 : 0.0);
+                    if (score < best) {
+                        best = score;
+                        pick = who;
+                    }
+                }
+
+                if (pick != this.foe) {
+                    this.dwell = 15;
+                }
+            }
+
+            PlayerEntity second = null;
+
+            for (PlayerEntity who : near) {
+                if (who != pick && (second == null || who.squaredDistanceTo(host) < second.squaredDistanceTo(host))) {
+                    second = who;
+                }
+            }
+
+            if (second != null) {
+                double far = (double)second.distanceTo(host);
+                run.second = second;
+                run.pair = far < 5.5;
+                int arm = Math.max(0, (int)Math.ceil((double)((0.95F - second.getAttackCooldownProgress(0.0F)) * second.getAttackCooldownProgressPerTick())));
+                run.secondIn = Math.max(arm, far <= 3.4 ? 0 : (int)((far - 3.4) / 0.28));
+            }
+
+            return pick;
+        }
+
         @Override
         public boolean tick(Run run, ServerPlayerEntity host) {
             if (this.foe != null && (!this.foe.isAlive() || this.foe.isRemoved())) {
-                if (this.foe.isDead()) {
+                // One who joined in uninvited is not one of those she was sent for, and is not counted as one.
+                if (this.foe.isDead() && this.others.remove(this.foe.getUuid()) == null) {
                     this.kills++;
                 }
 
                 this.foe = null;
                 this.chase = 0;
+            }
+
+            if (this.foe instanceof PlayerEntity) {
+                this.men = true;
+            }
+
+            if (this.men) {
+                this.joined(run, host);
+                if (this.foe == null && !this.others.isEmpty()) {
+                    // The one she was sent for is down or gone, and the other is still on her: him, then.
+                    this.foe = this.nearestOther(host);
+                }
             }
 
             if (this.foe instanceof PlayerEntity && this.foe.squaredDistanceTo(host) < 64.0 && host.canSee(this.foe)) {
@@ -5126,7 +5545,7 @@ public final class Pilot {
                 this.chase = 0;
             }
 
-            if (this.want > 0 && this.kills >= this.want) {
+            if (this.want > 0 && this.kills >= this.want && !(this.foe != null && this.others.containsKey(this.foe.getUuid()))) {
                 // The count is made. What the last of them dropped is still hers to pick up.
                 ItemEntity last = ++this.after < 100 && hasRoom(host) ? lying(host, 8.0, null) : null;
                 if (last == null && this.after > 12) {
@@ -5180,7 +5599,12 @@ public final class Pilot {
                     return true;
                 }
 
+                if (this.men) {
+                    this.foe = this.among(run, host);
+                }
+
                 fight(run, host, this.foe);
+                amid(run, host, this.foe);
                 return true;
             }
 
