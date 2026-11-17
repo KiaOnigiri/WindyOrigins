@@ -50,6 +50,95 @@ public final class PilotClient {
     public static final int CRIT = 65536;
     public static final int HOLD = 131072;
     /** Whether there is ground to stand on a step that way: forward and sideways as the keys have them, turned by where she faces. */
+    private static boolean hot(ClientPlayerEntity player, double x, double z) {
+        net.minecraft.util.math.BlockPos at = net.minecraft.util.math.BlockPos.ofFloored(x, player.getY() + 0.2, z);
+        for (net.minecraft.util.math.BlockPos cell : new net.minecraft.util.math.BlockPos[]{at, at.down()}) {
+            net.minecraft.block.BlockState state = player.getWorld().getBlockState(cell);
+            if (state.getBlock() instanceof net.minecraft.block.AbstractFireBlock || state.isOf(net.minecraft.block.Blocks.MAGMA_BLOCK) || player.getWorld().getFluidState(cell).isIn(net.minecraft.registry.tag.FluidTags.LAVA)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Fire or lava in the next step or the one after it, that way, anywhere the width of the body would pass: at the height of the feet or in the floor. */
+    private static boolean burning(ClientPlayerEntity player, float forward, float sideways) {
+        double yaw = Math.toRadians((double)player.getYaw());
+        double dx = (double)sideways * Math.cos(yaw) - (double)forward * Math.sin(yaw);
+        double dz = (double)forward * Math.cos(yaw) + (double)sideways * Math.sin(yaw);
+        double len = Math.max(1.0E-4, Math.sqrt(dx * dx + dz * dz));
+        dx /= len;
+        dz /= len;
+
+        for (double far : new double[]{0.5, 1.0, 1.5}) {
+            for (double aside : new double[]{-0.35, 0.0, 0.35}) {
+                if (hot(player, player.getX() + dx * far - dz * aside, player.getZ() + dz * far + dx * aside)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /** Standing in it: any corner of the body over fire or lava. */
+    private static boolean inFire(ClientPlayerEntity player) {
+        for (double ox : new double[]{-0.3, 0.3}) {
+            for (double oz : new double[]{-0.3, 0.3}) {
+                if (hot(player, player.getX() + ox, player.getZ() + oz)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A drop of four blocks or more, or lava, along the way she faces: behind her within two and a half blocks when
+     * the reach given is negative, ahead of her within that reach when it is not. A wall in between is no edge.
+     */
+    private static boolean edge(ClientPlayerEntity player, float reach) {
+        double yaw = Math.toRadians((double)player.getYaw());
+        double sign = reach < 0.0F ? -1.0 : 1.0;
+        double dx = -Math.sin(yaw) * sign;
+        double dz = Math.cos(yaw) * sign;
+        net.minecraft.world.World world = player.getWorld();
+        double[] fars = reach < 0.0F ? new double[]{1.0, 1.75, 2.5} : new double[]{(double)reach, (double)reach + 0.5};
+
+        for (double far : fars) {
+            net.minecraft.util.math.BlockPos cell = net.minecraft.util.math.BlockPos.ofFloored(player.getX() + dx * far, player.getY() + 0.2, player.getZ() + dz * far);
+            if (!world.getBlockState(cell).getCollisionShape(world, cell).isEmpty() || !world.getBlockState(cell.up()).getCollisionShape(world, cell.up()).isEmpty()) {
+                return false;
+            }
+
+            if (world.getFluidState(cell).isIn(net.minecraft.registry.tag.FluidTags.LAVA)) {
+                return true;
+            }
+
+            int down = 0;
+            while (down < 4) {
+                net.minecraft.util.math.BlockPos under = cell.down(down + 1);
+                if (world.getFluidState(under).isIn(net.minecraft.registry.tag.FluidTags.LAVA)) {
+                    return true;
+                }
+
+                if (!world.getBlockState(under).getCollisionShape(world, under).isEmpty() || !world.getFluidState(under).isEmpty()) {
+                    break;
+                }
+
+                down++;
+            }
+
+            if (down >= 4) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static boolean footing(ClientPlayerEntity player, float forward, float sideways) {
         double yaw = Math.toRadians((double)player.getYaw());
         double dx = (double)sideways * Math.cos(yaw) - (double)forward * Math.sin(yaw);
@@ -58,6 +147,10 @@ public final class PilotClient {
         for (double far : new double[]{0.8, 1.6}) {
             net.minecraft.util.math.BlockPos at = net.minecraft.util.math.BlockPos.ofFloored(player.getX() + dx * far, player.getY() + 0.2, player.getZ() + dz * far);
             boolean ground = false;
+            // Fire stands on the floor, at the height of the feet, not under them.
+            if (player.getWorld().getBlockState(at).getBlock() instanceof net.minecraft.block.AbstractFireBlock || player.getWorld().getFluidState(at).isIn(net.minecraft.registry.tag.FluidTags.LAVA)) {
+                return false;
+            }
 
             for (int down = 0; down <= 2 && !ground; down++) {
                 net.minecraft.util.math.BlockPos under = at.down(down + 1);
@@ -80,6 +173,8 @@ public final class PilotClient {
 
     public static final int FEINT = 262144;
     public static final int DROP = 524288;
+    /** Between two: she looks where she is told to, and stands, or backs away from there, with her shield to it. */
+    public static final int MID = 1048576;
     private static int dropWait;
     /** Which way round a raised shield, and for how long yet. */
     private static int holdSide = 1;
@@ -575,6 +670,8 @@ public final class PilotClient {
             double dz = go.z - player.getZ();
             double flat = Math.max(0.6, Math.sqrt(dx * dx + dz * dz));
             aim = new Vec3d(player.getX() + dx / flat * 4.0, player.getEyeY() - Math.tan(Math.toRadians((double)swim)) * 4.0, player.getZ() + dz / flat * 4.0);
+        } else if (target != null && (flags & MID) != 0 && look != null) {
+            aim = look;
         } else if (target != null) {
             aim = target.getPos().add(offX, (double)target.getHeight() * (0.55 + offY), offX);
         } else if (breakPos != null) {
@@ -696,6 +793,27 @@ public final class PilotClient {
                 // Pressing, she is still moving in when the blow lands: it is the run that throws him back.
                 forward = 1.0F;
             }
+            if ((flags & MID) != 0) {
+                // Her shield to the middle of two of them: no going round either, and backwards out from between them if told to.
+                // With one to either side she has her shield to one of them and goes sideways, one way, out of it.
+                sideways = (flags & HOLD) != 0 ? (float)holdSide : 0.0F;
+                forward = (flags & KITE) != 0 ? -1.0F : 0.0F;
+            }
+
+            // An edge close at her back and a man in front of her: one blow of his and she is over it. Whatever
+            // stance she was told to keep, she gives no more ground towards it, and moves along it instead.
+            if (forward < 0.0F && target instanceof net.minecraft.entity.player.PlayerEntity && near < 6.0 && edge(player, -1.0F)) {
+                forward = 0.0F;
+                if (sideways == 0.0F) {
+                    sideways = (float)strafe;
+                }
+            }
+
+            // Nor forwards over one after him, while he is still up here with her: she stops at the lip of it.
+            if (forward > 0.0F && target.getY() > player.getY() - 2.0 && edge(player, 0.5F)) {
+                forward = 0.0F;
+            }
+
             // Never a step to the side or backwards onto nothing, or into fire: the eyes are on him, not on the ground.
             if (sideways != 0.0F && !footing(player, 0.0F, sideways)) {
                 if (footing(player, 0.0F, -sideways)) {
@@ -709,6 +827,30 @@ public final class PilotClient {
 
             if (forward < 0.0F && !footing(player, forward, 0.0F)) {
                 forward = 0.0F;
+            }
+
+            // Nor forwards into fire, her own or anyone's: she goes round it, or waits for him on this side of it.
+            if (forward > 0.0F && burning(player, forward, 0.0F)) {
+                forward = 0.0F;
+                if (sideways == 0.0F) {
+                    sideways = footing(player, 0.0F, (float)strafe) && !burning(player, 0.0F, (float)strafe) ? (float)strafe : (footing(player, 0.0F, (float)(-strafe)) && !burning(player, 0.0F, (float)(-strafe)) ? (float)(-strafe) : 0.0F);
+                }
+            }
+
+            if (sideways != 0.0F && burning(player, 0.0F, sideways)) {
+                sideways = 0.0F;
+            }
+
+            // Standing in it is not a stance. Out, by the nearest way that has ground and no fire, whatever else she was doing.
+            if (inFire(player)) {
+                float[][] ways = {{-1.0F, 0.0F}, {0.0F, 1.0F}, {0.0F, -1.0F}, {1.0F, 0.0F}, {-1.0F, 1.0F}, {-1.0F, -1.0F}, {1.0F, 1.0F}, {1.0F, -1.0F}};
+                for (float[] way : ways) {
+                    if (footing(player, way[0], way[1]) && !burning(player, way[0], way[1])) {
+                        forward = way[0];
+                        sideways = way[1];
+                        break;
+                    }
+                }
             }
         } else {
             wtap = 0;
@@ -934,7 +1076,8 @@ public final class PilotClient {
                     placeWait = 3;
                     useFlash = 4;
                 }
-            } else if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && (player.getMainHandStack().getItem() instanceof net.minecraft.item.BlockItem || player.getMainHandStack().getItem() instanceof net.minecraft.item.HoeItem || player.getMainHandStack().isOf(net.minecraft.item.Items.END_CRYSTAL))) {
+            } else if (player.getEyePos().squaredDistanceTo(on) < 4.5 * 4.5 && (player.getMainHandStack().getItem() instanceof net.minecraft.item.BlockItem || player.getMainHandStack().getItem() instanceof net.minecraft.item.HoeItem || player.getMainHandStack().isOf(net.minecraft.item.Items.END_CRYSTAL)
+                || player.getMainHandStack().isOf(net.minecraft.item.Items.FLINT_AND_STEEL) || player.getMainHandStack().isOf(net.minecraft.item.Items.FIRE_CHARGE))) {
                 backWait = 0;
                 client.interactionManager.interactBlock(player, Hand.MAIN_HAND, seen ? (BlockHitResult)client.crosshairTarget : new BlockHitResult(on, placeFace, placeAgainst, false));
                 player.swingHand(Hand.MAIN_HAND);
